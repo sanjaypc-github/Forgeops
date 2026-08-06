@@ -1,0 +1,11 @@
+[2026-08-06 14:50:01] INFO api_gateway: GET /checkout/cart - 200 OK (45ms)
+[2026-08-06 14:50:05] INFO checkout_service: Retrieved item catalog details from Cache.
+[2026-08-06 14:51:12] INFO api_gateway: POST /checkout/pay - 200 OK (110ms)
+[2026-08-06 14:52:10] ERROR checkout_service: Redis connection timed out after 3000ms
+[2026-08-06 14:52:10] WARNING checkout_service: Cache pool unavailable. Attempting direct PostgreSQL fallback query...
+[2026-08-06 14:52:12] WARNING checkout_service: Cache miss for product_id: prod_99482. Falling back to DB.
+[2026-08-06 14:52:15] ERROR api_gateway: GET /checkout/pay - Internal Server Error (500) - Connection timeout waiting for pool resources.
+[2026-08-06 14:52:18] INFO api_gateway: GET /checkout/health - 200 OK (10ms)
+[2026-08-06 14:52:20] ERROR checkout_service: Redis connection timed out after 3000ms
+[2026-08-06 14:52:22] WARNING checkout_service: Cache pool unavailable. PostgreSQL query execution time: 4890ms.
+[2026-08-06 14:52:25] ERROR api_gateway: GET /checkout/pay - Internal Server Error (500)
