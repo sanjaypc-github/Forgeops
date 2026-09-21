@@ -2,10 +2,12 @@
 
 | | |
 |---|---|
-| Document | TRD, MVP scope |
+| Document | TRD v2, MVP scope |
 | Status | Draft for review |
 | Date | 2026-09-21 |
 | Companion | [PRD.md](PRD.md) |
+
+> v2 replaces v1: area-based agents, MCP connector catalog with capability routing, agent-to-agent questions, chat bar, Supabase-hosted ForgeOps database, real-website testing. Already built in M0 and kept: auth, workspaces, investigations API, persisted event bus with SSE replay, React shell.
 
 ---
 
@@ -15,424 +17,353 @@
 
 ```mermaid
 flowchart LR
-    ENG[Engineer]
-    SLACK[Slack]
+    U[SaaS founder / engineer]
     FO[ForgeOps]
     LLM[OpenRouter LLMs]
-    subgraph Customer engineering stack
-        GH[GitHub + Actions]
-        SEN[Sentry]
-        PROM[Prometheus]
-        LOKI[Loki]
-        VAULT[Knowledge vault<br/>Markdown / Obsidian]
+    DB[(ForgeOps database<br/>Supabase Postgres)]
+    subgraph customer[Customer stack - any subset]
+        GH[GitHub]
+        CF[Cloudflare]
+        SB[Supabase]
+        SN[Sanity]
+        SE[Sentry]
+        KV[Knowledge vault]
+        MORE[... Vercel, Netlify, AWS,<br/>Datadog, MongoDB - later]
     end
 
-    ENG -->|web app| FO
-    ENG -->|/forgeops, buttons| SLACK
-    SLACK <-->|Socket Mode| FO
+    U -->|office + chat bar| FO
+    FO --> DB
     FO -->|chat + tool calling| LLM
-    FO -->|read; create_issue after approval| GH
-    FO -->|read| SEN
-    FO -->|read| PROM
-    FO -->|read| LOKI
-    FO -->|index + search| VAULT
+    FO -->|MCP, read| GH & CF & SB & SN & SE
+    FO -->|MCP, write after approval| GH
+    FO -->|index + search| KV
 ```
 
-### 1.2 Containers (development topology, Docker Compose)
+### 1.2 Runtime components
 
 ```mermaid
 flowchart TB
-    subgraph forgeops[ForgeOps]
-        WEB[web<br/>React + TS, Vite]
-        API[api<br/>FastAPI + engine + Slack bot]
-        PG[(postgres<br/>app data + LangGraph checkpoints)]
-        CH[(chroma<br/>knowledge embeddings)]
-        GHMCP[github-mcp-server<br/>spawned per session, stdio]
+    subgraph web[Web app - React + TS]
+        OFFICE[War Room office<br/>SVG floor + characters]
+        CHAT[Chat bar]
+        CAT[Connector catalog]
+        HIST[Investigations + reports]
     end
-    subgraph sample[sample-saas: system under test]
-        SWEB[shop-web<br/>React + Sentry browser SDK]
-        SAPI[checkout-api<br/>FastAPI + Sentry + /metrics]
-        SPG[(shop-postgres)]
-        SPROM[prometheus]
-        SLOKI[loki]
-        ALLOY[alloy<br/>log shipper]
-        GRAF[grafana]
-        LOAD[load-generator]
+    subgraph api[API process - FastAPI]
+        REST[REST + SSE]
+        ENG[Engine - LangGraph]
+        REG[Capability registry]
+        MCPC[MCP client pool]
+        RAG[Knowledge search<br/>Chroma + BM25]
+        BUS[Event bus]
     end
+    PG[(Supabase Postgres<br/>app data + LangGraph checkpoints)]
+    MCPS[Official MCP servers<br/>remote HTTP or local stdio]
 
-    WEB -->|REST + SSE| API
-    API --> PG
-    API --> CH
-    API --> GHMCP
-    API -->|HTTP| SPROM
-    API -->|HTTP| SLOKI
-    SWEB --> SAPI --> SPG
-    LOAD --> SWEB
-    LOAD --> SAPI
-    SPROM -->|scrape| SAPI
-    ALLOY -->|container logs| SLOKI
-    GRAF --> SPROM
-    GRAF --> SLOKI
+    OFFICE & CHAT & CAT & HIST -->|REST / SSE| REST
+    REST --> ENG --> REG --> MCPC --> MCPS
+    REG --> RAG
+    ENG --> BUS --> PG
+    REST --> PG
 ```
 
-The ForgeOps and sample-saas stacks are separate compose projects. ForgeOps reaches the sample stack only through URLs configured on the Connections page, exactly as it would reach a customer.
+The engine runs inside the API process as background asyncio tasks (MVP). Docker is optional for development: ForgeOps' own database is a Supabase project, and remote MCP servers need no containers.
 
 ### 1.3 Layers
 
 | Layer | Responsibility | Package |
 |---|---|---|
-| Presentation | War Room, pages, SSE client | `frontend/` |
-| Application | Auth, REST API, SSE, Slack bot, lifecycle | `backend/forgeops/api`, `backend/forgeops/slack` |
-| Orchestration | LangGraph graph, shared state, checkpoints | `backend/forgeops/engine` |
-| Agents | Supervisor, specialists, RCA, Action | `backend/forgeops/engine/agents` |
-| Capability | Tool interface, registry, permission policy | `backend/forgeops/capabilities` |
-| Connectors | GitHub (MCP), Sentry, Prometheus, Loki, Knowledge | `backend/forgeops/connectors` |
-| Memory | Chunking, embeddings, Chroma, BM25, hybrid retrieval | `backend/forgeops/knowledge` |
-| Persistence | SQLAlchemy models, Alembic migrations | `backend/forgeops/db` |
-| Events | Event bus, persistence, SSE fan-out | `backend/forgeops/events` |
+| Presentation | Office, chat bar, catalog, history | `frontend/` |
+| Application | Auth, REST, SSE, chat, lifecycle | `backend/forgeops/api` |
+| Orchestration | LangGraph graph, shared state, checkpoints, agent messaging | `backend/forgeops/engine` |
+| Agents | Supervisor, 6 specialists, RCA, Action | `backend/forgeops/engine/agents` |
+| Capability | Tool spec, registry, policy, wrapper | `backend/forgeops/capabilities` |
+| Connectors | Catalog definitions, MCP client, native knowledge connector | `backend/forgeops/connectors` |
+| Knowledge | Ingest, chunk, embed, BM25, hybrid retrieval | `backend/forgeops/knowledge` |
+| Persistence | Models, migrations | `backend/forgeops/db`, `backend/alembic` |
+| Events | Bus, persistence, SSE | `backend/forgeops/events` |
 
 ## 2. Technology choices
 
-| Concern | Choice | Reason |
+| Concern | Choice |
+|---|---|
+| Backend | Python 3.12 (uv), FastAPI, Pydantic v2, SQLAlchemy 2 async + asyncpg, Alembic |
+| Orchestration | LangGraph 1.2 (`StateGraph`, `Send`, `interrupt`, `Command`) + `langgraph-checkpoint-postgres` (`AsyncPostgresSaver`) |
+| LLM | OpenRouter through `langchain-openai` `ChatOpenAI(base_url="https://openrouter.ai/api/v1")`; model per role from config |
+| MCP | Official `mcp` Python SDK client; transports: streamable HTTP (remote servers) and stdio (local `npx` servers) |
+| Knowledge | ChromaDB (embedded, persistent directory), local embeddings, `rank-bm25` |
+| ForgeOps database | Supabase Postgres (session pooler or direct connection; not the transaction pooler, which breaks asyncpg prepared statements) |
+| Frontend | React 19, TypeScript, Vite, React Router 8, TanStack Query; office drawn with SVG + CSS |
+| Tests | pytest + pytest-asyncio + httpx; Vitest + Testing Library |
+
+## 3. Agents
+
+### 3.1 Roles
+
+| Agent id | Role | Tools |
 |---|---|---|
-| Backend runtime | Python 3.12 (uv-managed) | LangGraph/Chroma require ≥ 3.10 |
-| Web framework | FastAPI, Pydantic v2, uvicorn | Async, typed contracts |
-| Orchestration | LangGraph + `langgraph-checkpoint-postgres` | Parallel fan-out, reducers, `interrupt()` for approval, durable pause |
-| LLM access | OpenRouter via `langchain-openai` `ChatOpenAI(base_url=…)` | Provider-agnostic, tool calling; per-role model config |
-| MCP | Official `mcp` Python SDK client → `ghcr.io/github/github-mcp-server` (pinned tag) | Official, supports read-only mode and toolset selection |
-| HTTP clients | `httpx` async | Sentry, Prometheus, Loki APIs |
-| Database | PostgreSQL 16, SQLAlchemy 2 async, Alembic | Real deployment parity; also hosts checkpoints |
-| Vector store | ChromaDB (server container) | Spec requirement |
-| Embeddings | Local sentence-transformer (`all-MiniLM-L6-v2` via Chroma default ONNX) | No extra credential |
-| Lexical search | `rank-bm25` | Hybrid retrieval |
-| Secrets at rest | `cryptography` Fernet, key from env | Encrypted connection credentials |
-| Auth | Argon2 password hash, httpOnly session cookie | Simple admin login, workspace-ready |
-| Slack | `slack-bolt` async, Socket Mode | No public URL needed |
-| Frontend | React 18 + TypeScript + Vite, React Router, TanStack Query, CSS Modules | No heavy graphics engine; SVG + CSS for the office |
-| Tests | pytest + pytest-asyncio + respx; Vitest + React Testing Library; Playwright (smoke) | |
-| Logging | `structlog` JSON logs with investigation_id/workspace_id | |
+| `supervisor` | Plan, assign, review, answer chat follow-ups | none (reads registry, service map, evidence) |
+| `code` | What changed in code | capability `code` |
+| `frontend_hosting` | Deploys, builds, edge, domains | capability `hosting` |
+| `backend_services` | APIs, functions, auth, CMS | capabilities `backend`, `content` |
+| `database` | Queries, connections, schema | capability `database` |
+| `observability` | Errors, logs, metrics, traces | capabilities `errors`, `logs`, `metrics` |
+| `knowledge` | Runbooks, docs, past incidents | capability `knowledge` |
+| `rca` | Root cause, failure point, confidence | none (reads evidence) |
+| `action` | Approved writes | `write` tools of approved recommendations only |
 
-## 3. Investigation flow
+Every specialist also gets the `ask_agent` tool (§5) and the `submit_findings` tool.
 
-### 3.1 End-to-end sequence
+### 3.2 Capabilities
+
+`code, hosting, backend, content, database, errors, logs, metrics, knowledge` (read) and `write` (issue creation etc.). A capability is routed to exactly one agent (table above); a connector may provide several capabilities.
+
+## 4. Investigation flow
+
+### 4.1 Sequence
 
 ```mermaid
 sequenceDiagram
-    actor E as Engineer
-    participant W as War Room (web)
+    actor U as User
+    participant C as Chat bar / Office
     participant A as API
-    participant G as LangGraph engine
-    participant R as Capability registry
-    participant T as Tools (GitHub MCP / Sentry / Prom / Loki / RAG)
-    participant L as OpenRouter
-    participant B as Event bus + DB
+    participant S as Supervisor
+    participant X as Specialists (parallel)
+    participant M as MCP servers
+    participant R as RCA
+    participant B as Event bus
 
-    E->>W: Submit incident
-    W->>A: POST /api/investigations
-    A->>B: create investigation, investigation_started
-    A-->>W: 201 {id}
-    W->>A: GET /api/investigations/{id}/events (SSE)
-    A->>G: start run (background task)
-    G->>R: which capabilities exist for this workspace?
-    G->>L: Supervisor plan (structured output)
-    G->>B: supervisor_started, plan_created
-    par Specialists in parallel
-        G->>L: Code agent step
-        G->>T: tool call (read)
-        G->>B: tool_called / tool_completed / evidence_added
-    and
-        G->>T: Observability tool calls
-        G->>B: events
+    U->>C: "Site is very slow, sometimes shows a warning"
+    C->>A: POST /api/chat (new investigation)
+    A->>B: investigation_started
+    A->>S: run graph (background)
+    S->>B: plan_created (tasks, skipped desks)
+    par each selected agent
+        X->>M: read tool calls
+        X->>B: tool_called / tool_completed
+        X->>X: ask_agent(other agent, question)
+        X->>B: agent_question / agent_answer
+        X->>B: evidence_added
     end
-    G->>L: Supervisor review (enough evidence?)
-    G->>L: RCA (structured output, citations)
-    G->>B: rca_completed, approval_requested
-    G-->>G: interrupt() — checkpoint saved
-    B-->>W: events streamed live
-    E->>W: Approve "create GitHub issue"
-    W->>A: POST /api/investigations/{id}/decision
-    A->>G: resume(Command(resume=decision))
-    G->>T: create_issue (write, approved)
-    G->>B: action_started / action_completed / investigation_completed
+    S->>S: review evidence (max 1 follow-up round)
+    S->>R: all evidence
+    R->>B: rca_completed
+    R->>B: approval_requested (graph pauses)
+    B-->>C: every event live (SSE)
+    U->>C: Approve
+    C->>A: POST /api/investigations/{id}/decision
+    A->>S: resume
+    S->>M: create GitHub issue (write, approved)
+    S->>B: action_completed, report_ready, investigation_completed
 ```
 
-### 3.2 Graph
+### 4.2 Graph
 
 ```mermaid
 stateDiagram-v2
     [*] --> plan
-    plan --> dispatch
-    dispatch --> code_agent: Send()
-    dispatch --> deployment_agent: Send()
-    dispatch --> observability_agent: Send()
-    dispatch --> knowledge_agent: Send()
-    code_agent --> review
-    deployment_agent --> review
-    observability_agent --> review
-    knowledge_agent --> review
-    review --> dispatch: gaps found (max 1 follow-up round)
-    review --> rca: enough evidence
+    plan --> specialists: Send() to each selected agent
+    specialists --> review
+    review --> specialists: gaps (max 1 extra round)
+    review --> rca
     rca --> approval
-    approval --> action: approved actions
-    approval --> closed: rejected
+    approval --> action: approve
+    approval --> report: reject
     approval --> plan: investigate more + note (max 2)
     action --> report
-    closed --> report
     report --> [*]
 ```
 
-- `dispatch` uses LangGraph `Send` to run only the agents the plan selected **and** whose capabilities are connected.
-- Specialists write into a reducer-backed `evidence` list (`Annotated[list[Evidence], operator.add]`), so concurrent writes merge safely.
-- `approval` calls `interrupt(payload)`; the Postgres checkpointer persists the paused run. Resume via `Command(resume=Decision)`.
-- `report` always runs: a closed or rejected investigation still gets a report.
+- `plan` selects agents whose capabilities are connected and relevant; the rest are emitted as `agent_skipped` with a reason.
+- `specialists` is one node type invoked via `Send("specialist", AgentTask)` per selected agent; LangGraph runs them concurrently.
+- State lists written by parallel agents use reducers (`Annotated[list[T], operator.add]`).
+- `approval` calls `interrupt(payload)`; `AsyncPostgresSaver` persists the pause; `POST /decision` resumes with `Command(resume=decision)`.
 
-### 3.3 Specialist agent loop
+### 4.3 Specialist loop
 
 ```mermaid
 flowchart LR
-    TASK[Task from plan<br/>objective, service, time window] --> LLM{LLM step}
-    LLM -->|tool call| TOOL[Read tool via registry] --> LLM
-    LLM -->|submit_findings| OUT[Evidence list]
-    LLM -->|budget exhausted| FORCE[Forced submit_findings] --> OUT
+    T[Task: objective, service, time window] --> L{LLM step}
+    L -->|read tool| W[Tool wrapper] --> L
+    L -->|ask_agent| Q[Question to another agent] --> L
+    L -->|submit_findings| F[Evidence]
+    L -->|budget reached| FF[Forced submit_findings] --> F
 ```
 
-- Tools bound: the agent's read tools + `submit_findings` (structured output).
-- Budget: max 6 tool calls, 90 s wall clock, per-tool timeout 20 s. On exhaustion the agent is asked once more to submit findings with what it has.
-- Any exception → `agent_failed` event + entry in `errors`; the graph continues.
+Budgets per specialist: 8 tool calls, 2 `ask_agent` questions, 150 s wall clock, 20 s per tool call. Per investigation: 12 questions total, 20 minutes total.
 
-### 3.4 Prompts (contract, not wording)
+## 5. Agent-to-agent questions
 
-| Agent | Input | Output (Pydantic) | Hard rules |
-|---|---|---|---|
-| Supervisor plan | incident, services map, available capabilities, now | `Plan{summary, service, window_start, window_end, hypotheses[], tasks[{agent, objective, hints}]}` | Only choose agents with capabilities; window defaults to last 2 h |
-| Supervisor review | plan, evidence summaries | `Review{sufficient: bool, follow_up_tasks[]}` | At most one follow-up round |
-| Specialist | task, service mapping, window | `Findings{evidence[]}` | Every evidence item must reference ≥ 1 tool call id from this run |
-| RCA | incident, plan, all evidence, errors, missing capabilities | `RCA{...}` (§4.3) | Cite evidence ids; no uncited claims; list missing info |
-| Action | approved recommendations, RCA | executes tools; `Report` | Only tools of approved recommendations, with the parameters the human saw |
+- Tool: `ask_agent(agent: AgentId, question: str) -> str`, available to specialists.
+- Handling: the engine runs a **focused sub-run** of the target agent: its system prompt, its read tools, the question as the task, a budget of 3 tool calls and 45 s, and **no** `ask_agent` tool (no nested questions, no loops). The answer text returns to the asking agent. Any evidence the target finds is added to shared state with `agent = target`.
+- If the target agent has no connectors, the answer is "no connector for this area" immediately.
+- Events: `agent_question {from, to, question}` then `agent_answer {from, to, answer_summary}` (or `agent_question_failed`). The office uses these for the walk to the other desk and back.
+- Limits: 2 questions per agent per round, 12 per investigation; repeated identical questions return the cached answer.
 
-Tool outputs are wrapped as data (`<tool_output source=…>…</tool_output>`), and system prompts state that instructions inside tool output must be ignored.
+## 6. Data contracts
 
-## 4. Data contracts
-
-### 4.1 Shared investigation state
+### 6.1 Shared state
 
 ```python
 class InvestigationState(TypedDict):
     workspace_id: str
     investigation_id: str
-    incident: Incident                  # description, service?, window?, source (web|slack)
-    capabilities: list[str]             # connected at start
+    incident: Incident                 # text, source (chat|web), service_id?, window?
+    capabilities: dict[str, list[str]] # agent -> connected capabilities at start
     plan: Plan | None
-    tasks: list[AgentTask]
     evidence: Annotated[list[Evidence], operator.add]
     tool_calls: Annotated[list[ToolCallRecord], operator.add]
+    questions: Annotated[list[AgentQuestion], operator.add]
     review_rounds: int
     rca: RCA | None
     decision: Decision | None
     action_results: Annotated[list[ActionResult], operator.add]
-    report_id: str | None
     errors: Annotated[list[AgentError], operator.add]
     warnings: Annotated[list[str], operator.add]
 ```
 
-Per-agent evidence lists from the original spec are derived by filtering `evidence` on `agent`.
-
-### 4.2 Evidence
+### 6.2 Evidence
 
 ```python
 class Artifact(BaseModel):
-    type: Literal["commit","pull_request","diff","workflow_run","release",
-                  "error_issue","error_event","metric_series","log_lines","doc_chunk"]
-    ref: str                     # sha, run id, issue id, query, doc path
+    type: Literal["commit","pull_request","diff","deployment","build_log","workflow_run",
+                  "error_issue","error_event","log_lines","metric","query_stats",
+                  "db_advisor","content_change","config","doc_chunk"]
+    ref: str                  # sha, deploy id, issue id, query, document id, path
     url: str | None
     timestamp: datetime | None
-    excerpt: str | None          # truncated, max 2 KB
+    excerpt: str | None       # max 2 KB
 
 class Evidence(BaseModel):
     id: str
-    agent: AgentName
-    capability: Capability       # code|deployments|errors|metrics|logs|knowledge
-    source: str                  # connection id
-    source_type: str             # github|sentry|prometheus|loki|knowledge
-    finding: str                 # one-sentence claim
+    agent: AgentId
+    capability: Capability
+    connector: str            # connection id
+    connector_type: str       # github | cloudflare | supabase | sanity | sentry | knowledge
+    finding: str              # one-sentence claim
+    failure_point: str | None # e.g. "src/pages/checkout.tsx:42", "deploy 3f2a…", "orders_by_user query"
     artifacts: list[Artifact]
     severity: Literal["info","low","medium","high","critical"]
-    confidence: float            # 0..1
+    confidence: float
     limitations: str | None
-    tool_call_ids: list[str]     # must be non-empty
-    created_at: datetime
+    tool_call_ids: list[str]  # non-empty
 ```
 
-### 4.3 RCA
+### 6.3 RCA
 
 ```python
 class Recommendation(BaseModel):
     id: str
     title: str
     description: str
-    action: Literal["none","github_issue"]   # MVP write actions
-    parameters: dict                          # shown verbatim to the approver
-    requires_approval: bool                   # true for every write
+    action: Literal["none", "github_issue"]
+    parameters: dict           # shown verbatim to the approver
+    requires_approval: bool
 
 class RCA(BaseModel):
-    root_cause: str
-    category: Literal["code_change","config_change","dependency","infrastructure",
-                      "data","traffic","unknown"]
+    summary: str               # plain-language root cause
+    failure_point: str         # the exact place it breaks
+    category: Literal["code_change","config_change","deployment","content_change",
+                      "database","dependency","infrastructure","traffic","unknown"]
     confidence: float
-    supporting_evidence: list[str]            # evidence ids
+    timeline: list[TimelineItem]           # ordered events with evidence ids
+    supporting_evidence: list[str]
     contradicting_evidence: list[str]
     alternative_hypotheses: list[str]
-    missing_information: list[str]            # e.g. "Loki not connected"
+    missing_information: list[str]         # e.g. "No error tracker connected"
     recommendations: list[Recommendation]
 ```
 
-Confidence caps (applied in code after the LLM returns): no supporting evidence → ≤ 0.2; only one source type → ≤ 0.6; any contradicting evidence → −0.1.
+Confidence caps (in code): no supporting evidence → ≤ 0.2; one connector type only → ≤ 0.6; any contradicting evidence → −0.1.
 
-### 4.4 Decision
+## 7. Connectors and MCP
 
-```python
-class Decision(BaseModel):
-    kind: Literal["approve","reject","investigate_more"]
-    approved_recommendation_ids: list[str] = []
-    note: str | None
-    decided_by: str      # user id or slack user id
-    channel: Literal["web","slack"]
-```
-
-## 5. Capability registry and connectors
-
-### 5.1 Model
+### 7.1 Model
 
 ```mermaid
 flowchart TB
-    CONN[Connection row<br/>type, config, encrypted secret] --> FACT[Connector factory]
-    FACT --> C1[GitHubConnector<br/>MCP]
-    FACT --> C2[SentryConnector<br/>HTTP]
-    FACT --> C3[PrometheusConnector<br/>HTTP]
-    FACT --> C4[LokiConnector<br/>HTTP]
-    FACT --> C5[KnowledgeConnector<br/>native]
-    C1 & C2 & C3 & C4 & C5 -->|list_tools| REG[Capability registry<br/>per investigation]
-    REG -->|policy filter: permission + agent role| AG[Agent tool sets]
-    AG --> WRAP[Tool wrapper<br/>timeout, retry, truncate, events, record]
+    DEF[Connector definition<br/>catalog entry, code-defined] --> CONN[Connection row<br/>workspace, config, encrypted token]
+    CONN --> CLIENT[MCP session<br/>streamable HTTP or stdio]
+    CLIENT -->|list_tools| MAP[Tool map in definition<br/>upstream tool -> capability + permission]
+    MAP --> REG[Capability registry per investigation]
+    REG -->|read tools| SPEC[Specialists]
+    REG -->|write tools, after approval| ACT[Action]
 ```
+
+### 7.2 Connector definition (code)
 
 ```python
-class ToolSpec(BaseModel):
-    name: str                       # e.g. "prometheus.query_range"
-    description: str
+class ToolMapping(BaseModel):
+    upstream: str                # tool name exposed by the MCP server
+    name: str                    # ForgeOps name, e.g. "supabase.get_logs"
     capability: Capability
-    permission: Literal["read","write","execute"]
-    input_model: type[BaseModel]
-    connection_id: str
+    permission: Literal["read", "write"]
 
-class ToolResult(BaseModel):
-    ok: bool
-    data: Any
-    error: str | None
-    truncated: bool
-    duration_ms: int
-
-class Connector(Protocol):
-    type: str
-    async def health_check(self) -> HealthStatus: ...
-    async def list_tools(self) -> list[ToolSpec]: ...
-    async def call(self, tool: str, args: BaseModel) -> ToolResult: ...
-    async def close(self) -> None: ...
+class ConnectorDefinition(BaseModel):
+    type: str                    # "github", "cloudflare", ...
+    display_name: str
+    category_agents: list[AgentId]   # desks it shows under in the catalog
+    status: Literal["available", "coming_soon"]
+    transport: Literal["http", "stdio", "native"]
+    endpoint: str | None         # remote MCP URL, or stdio command template
+    config_fields: list[ConfigField]   # e.g. token (secret), account_id, project_ref
+    tools: list[ToolMapping]     # allowlist; unmapped upstream tools are never exposed
+    docs_url: str
 ```
 
-### 5.2 Capability → agent mapping (static in MVP)
+- **Allowlist, not trust.** Only tools listed in `tools` are ever given to an agent. New upstream tools are ignored until mapped.
+- **Read-only modes** are enabled wherever the server offers one (e.g. GitHub `--read-only`/read-only toolsets, Supabase `--read-only`).
+- Each definition's exact upstream tool names, transport and auth header are verified against the pinned server version when that connector is built, and captured in a contract test. If a server cannot authenticate with an API token, that connector falls back to a native HTTP client implementing the same `ToolMapping` names.
 
-| Capability | Agent |
-|---|---|
-| code | Code |
-| deployments | Deployment |
-| errors, metrics, logs | Observability |
-| knowledge | Knowledge |
-| write tools (`github.create_issue`) | Action, only after approval |
+### 7.3 MVP connectors
 
-### 5.3 MVP tools
+| Connector | Server | Auth for MVP | Capabilities | Example tools (ForgeOps names) |
+|---|---|---|---|---|
+| GitHub | Official GitHub MCP server | Fine-grained PAT | code, hosting (Actions), write | `github.list_commits`, `github.get_commit`, `github.compare`, `github.list_pull_requests`, `github.get_file`, `github.list_workflow_runs`, `github.get_job_logs`, `github.create_issue` (write) |
+| Cloudflare | Official Cloudflare MCP servers (builds, observability, workers) | API token + account ID | hosting, backend, logs, metrics | `cloudflare.list_deployments`, `cloudflare.get_build_logs`, `cloudflare.query_worker_logs`, `cloudflare.traffic_analytics` |
+| Supabase | Official Supabase MCP server, read-only | Personal access token + project ref | database, backend, logs | `supabase.get_logs(service)`, `supabase.list_migrations`, `supabase.get_advisors`, `supabase.execute_readonly_sql`, `supabase.list_edge_functions` |
+| Sanity | Official Sanity MCP server | Read token + project ID + dataset | content | `sanity.recent_changes`, `sanity.get_document`, `sanity.query` |
+| Sentry | Official Sentry MCP server | Auth token + org | errors | `sentry.list_issues`, `sentry.get_issue_details`, `sentry.list_releases` |
+| Knowledge vault | Native | Folder path or repo path | knowledge | `knowledge.search` |
 
-| Tool | Connector | Perm | Capability |
-|---|---|---|---|
-| `github.list_commits(repo, since, until)` | GitHub MCP | read | code |
-| `github.get_commit(repo, sha)` (includes diff) | GitHub MCP | read | code |
-| `github.compare(repo, base, head)` | GitHub MCP | read | code |
-| `github.list_pull_requests(repo, state)` / `get_pull_request` | GitHub MCP | read | code |
-| `github.get_file(repo, path, ref)` | GitHub MCP | read | code |
-| `github.list_workflow_runs(repo, since)` | GitHub MCP | read | deployments |
-| `github.get_workflow_run_logs(repo, run_id)` | GitHub MCP | read | deployments |
-| `github.list_releases(repo)` | GitHub MCP | read | deployments |
-| `github.create_issue(repo, title, body, labels)` | GitHub MCP (write session) | write | action |
-| `sentry.list_issues(project, since, query)` | Sentry REST | read | errors |
-| `sentry.get_issue_latest_event(issue_id)` (stack trace, release, tags) | Sentry REST | read | errors |
-| `sentry.list_releases(project)` | Sentry REST | read | deployments |
-| `prometheus.query(promql, time)` | Prometheus HTTP | read | metrics |
-| `prometheus.query_range(promql, start, end, step)` | Prometheus HTTP | read | metrics |
-| `prometheus.list_metrics(match)` | Prometheus HTTP | read | metrics |
-| `prometheus.active_alerts()` | Prometheus HTTP | read | metrics |
-| `loki.query_range(logql, start, end, limit)` | Loki HTTP | read | logs |
-| `loki.list_labels()` / `label_values(label)` | Loki HTTP | read | logs |
-| `knowledge.search(query, k)` | Native | read | knowledge |
+### 7.4 Tool wrapper
+- Timeout 20 s; 2 retries on rate limit / 5xx with backoff.
+- Truncates results (logs ≤ 200 lines, text ≤ 8 KB, lists ≤ 50 items) and records `truncated`.
+- Emits `tool_called` / `tool_completed`; stores a `ToolCallRecord` for provenance.
+- Wraps output as untrusted data for the LLM.
+- Never logs or emits secrets.
 
-GitHub MCP tool names are mapped to these ForgeOps names by the connector; the exact upstream names are pinned to the server version and verified in the connector's contract test.
-
-### 5.4 Wrapper behavior
-- Timeout 20 s per call; retry twice on 429/5xx with exponential backoff.
-- Truncation: logs ≤ 200 lines, metric series downsampled to ≤ 120 points per series and ≤ 10 series, text ≤ 8 KB; `truncated=true` recorded.
-- Emits `tool_called` (name, args summary) and `tool_completed` (ok, duration, result summary).
-- Persists a `ToolCallRecord` (id, agent, tool, args, ok, duration, result excerpt) for provenance.
-- Secrets never appear in args, logs or events.
-
-### 5.5 Service map
+### 7.5 Service map
 
 ```python
 class Service(BaseModel):
     id: str
     workspace_id: str
-    name: str                     # "checkout"
-    aliases: list[str]            # ["checkout-api", "payments"]
-    github_repo: str | None       # "owner/forgeops-sample-shop"
-    sentry_projects: list[str]    # ["shop-web", "checkout-api"]
-    prometheus_selector: str | None   # 'job="checkout-api"'
-    loki_selector: str | None         # '{service="checkout-api"}'
-    knowledge_tags: list[str]
+    name: str                 # "marketing site", "api"
+    aliases: list[str]
+    resources: dict[str, str] # connector type -> resource id
+                              # e.g. {"github": "owner/repo", "cloudflare": "pages:my-site",
+                              #       "supabase": "abcd1234", "sanity": "proj/production",
+                              #       "sentry": "my-org/web"}
 ```
 
-## 6. Events
+## 8. Chat
 
-### 6.1 Flow
+- `POST /api/chat` with `{text, investigation_id?}`.
+  - Without `investigation_id`: creates an investigation from the text and starts the graph.
+  - With `investigation_id` while running: stored as user context, passed to the Supervisor at its next review.
+  - With `investigation_id` after RCA: a follow-up question. The Supervisor answers from evidence; if it needs new data it starts an "investigate more" round.
+- Chat messages are persisted (`chat_messages` table) and also emitted as `chat_message` events, so the chat and the office replay together.
 
-```mermaid
-flowchart LR
-    NODE[Graph node / tool wrapper] -->|emit| BUS[EventBus]
-    BUS -->|INSERT seq| DB[(events table)]
-    BUS -->|publish| Q[in-process pub/sub per investigation]
-    Q --> SSE[SSE endpoint]
-    SSE --> UI[War Room reducer]
-    UI -. reconnect with Last-Event-ID .-> SSE
-    SSE -. replay seq > last .-> DB
-```
+## 9. Events
 
-### 6.2 Event envelope
+Existing (M0): `investigation_started, supervisor_started, plan_created, agent_skipped, agent_started, tool_called, tool_completed, evidence_added, agent_failed, agent_completed, review_completed, rca_started, rca_completed, approval_requested, approval_granted, approval_rejected, action_started, action_completed, report_ready, investigation_completed, investigation_failed`.
 
-```json
-{
-  "seq": 42,
-  "investigation_id": "inv_…",
-  "type": "tool_called",
-  "agent": "observability",
-  "ts": "2026-09-21T10:14:03.120Z",
-  "data": { "tool": "prometheus.query_range", "summary": "histogram_quantile(0.95, …)" }
-}
-```
+Added in v2: `agent_question`, `agent_answer`, `agent_question_failed`, `chat_message`.
 
-### 6.3 Event types
+Envelope unchanged: `{seq, investigation_id, type, agent, ts, data}`; SSE with `Last-Event-ID` replay.
 
-Canonical (from spec): `investigation_started`, `supervisor_started`, `agent_started`, `tool_called`, `tool_completed`, `evidence_added`, `agent_failed`, `agent_completed`, `rca_started`, `rca_completed`, `approval_requested`, `approval_granted`, `approval_rejected`, `action_started`, `action_completed`, `investigation_completed`.
-
-Added for the MVP: `plan_created` (tasks, skipped agents with reasons), `agent_skipped`, `review_completed`, `investigation_failed`, `report_ready`.
-
-## 7. Persistence
+## 10. Persistence
 
 ```mermaid
 erDiagram
@@ -440,8 +371,10 @@ erDiagram
     USER ||--o{ USER_MEMBERSHIP : has
     WORKSPACE ||--o{ CONNECTION : has
     WORKSPACE ||--o{ SERVICE : has
+    WORKSPACE ||--o{ KNOWLEDGE_SOURCE : has
     WORKSPACE ||--o{ INVESTIGATION : has
     INVESTIGATION ||--o{ EVENT : emits
+    INVESTIGATION ||--o{ CHAT_MESSAGE : has
     INVESTIGATION ||--o{ EVIDENCE : collects
     INVESTIGATION ||--o{ TOOL_CALL : records
     INVESTIGATION ||--o| RCA_RESULT : produces
@@ -449,248 +382,137 @@ erDiagram
     INVESTIGATION ||--o{ ACTION_RESULT : executes
     INVESTIGATION ||--o| REPORT : generates
     WORKSPACE ||--o{ AUDIT_LOG : records
-    WORKSPACE ||--o{ KNOWLEDGE_SOURCE : has
 ```
 
-- Every table except `user` carries `workspace_id`; every query is scoped by it (repository layer enforces).
-- `connection.secret_encrypted` holds Fernet-encrypted JSON; decrypted only inside connector construction.
-- LangGraph checkpoint tables are created by `AsyncPostgresSaver.setup()` in the same database.
+- Existing from M0: workspaces, users, memberships, auth_sessions, investigations, events, audit_log.
+- `connection.secret_encrypted`: Fernet-encrypted JSON.
+- LangGraph checkpoint tables created by `AsyncPostgresSaver.setup()`.
 - `investigation.status`: `queued | running | awaiting_approval | acting | completed | rejected | failed`.
 
-## 8. API contract
-
-All routes under `/api`, JSON, session cookie auth except `/api/auth/login` and `/api/health`.
+## 11. API
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/auth/login`, `/auth/logout` | Session |
-| GET | `/auth/me` | Current user + workspace |
-| GET | `/health` | Liveness |
-| GET/POST | `/connections` | List / create (validates + health-checks) |
-| GET/PATCH/DELETE | `/connections/{id}` | Detail (no secrets), update, remove |
-| POST | `/connections/{id}/test` | Re-run health check |
-| GET | `/connections/{id}/tools` | Discovered tools with permissions |
-| GET/POST | `/services`, GET/PATCH/DELETE `/services/{id}` | Service map |
-| GET | `/capabilities` | Connected capabilities + which agents they enable |
-| POST | `/investigations` | Start `{description, service_id?, window_start?, window_end?}` |
-| GET | `/investigations` | List with filters |
-| GET | `/investigations/{id}` | Full snapshot: status, plan, evidence, rca, decisions |
-| GET | `/investigations/{id}/events` | SSE stream, supports `Last-Event-ID` |
-| POST | `/investigations/{id}/decision` | `Decision` body; 409 unless `awaiting_approval` |
+| POST | `/auth/login`, `/auth/logout`; GET `/auth/me` | Session (built) |
+| GET | `/health` | Liveness (built) |
+| GET | `/connectors/catalog` | Definitions grouped by agent, with status and config fields |
+| GET/POST | `/connections` | List / connect (validates, lists tools) |
+| GET/DELETE | `/connections/{id}`; POST `/connections/{id}/test` | Detail (no secrets), remove, re-test |
+| GET | `/agents` | Agents with their connected capabilities (for desks) |
+| GET/POST/PATCH/DELETE | `/services…` | Service map |
+| POST | `/chat` | New investigation or message (§8) |
+| GET | `/investigations`, `/investigations/{id}` | List / snapshot (built; snapshot extended) |
+| GET | `/investigations/{id}/events` | SSE (built) |
+| POST | `/investigations/{id}/decision` | Approve / reject / investigate more |
 | GET | `/investigations/{id}/report` | Markdown report |
-| GET/POST | `/knowledge/sources`, POST `/knowledge/sources/{id}/reindex` | Vault config + status |
+| GET/POST | `/knowledge/sources`, POST `/knowledge/sources/{id}/reindex` | Vault |
 | GET | `/audit` | Audit log |
 
-## 9. War Room UI
+## 12. War Room UI
 
-### 9.1 Pages
-
-| Route | Page |
-|---|---|
-| `/login` | Sign in |
-| `/` | Investigations list + "New investigation" |
-| `/investigations/:id` | **War Room** |
-| `/investigations/:id/report` | Report view |
-| `/connections` | Connections (add, test, tools + permissions) |
-| `/services` | Service map |
-| `/knowledge` | Vault sources, index status |
-| `/settings` | Slack, policies, audit log |
-
-### 9.2 War Room layout (top-down 2D floor plan)
+### 12.1 Layout
 
 ```text
-┌──────────────────────────── INCIDENT SCREEN (header: title, status, timer) ────────────────────────────┐
-│                                                                                                         │
-│  ┌── Supervisor office ──┐        ┌────────── EVIDENCE WALL ──────────┐      ┌── RCA room ──┐          │
-│  │ desk + whiteboard     │        │ pinned cards (source, claim, conf) │      │ analyst desk │          │
-│  │ (plan written here)   │        └────────────────────────────────────┘      └──────────────┘          │
-│  └───────────────────────┘                                                                              │
-│                                                                                                         │
-│   [Code desk]   [Deployment desk]   [Observability desk]   [Knowledge desk]                             │
-│                                                                                                         │
-│   [Infrastructure] [Database] [Incident]   ← "not connected" (dimmed)          ┌── Approval desk ──┐     │
-│                                                                                │ human + buttons   │     │
-│                                                                                └───────────────────┘     │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-   Right rail: live event feed (filterable by agent)      Bottom drawer: RCA + decisions (opens on rca_completed)
+┌──────────────── INCIDENT SCREEN: title · status · timer ─────────────────┬──── CHAT ────┐
+│                                                                           │ You: site is │
+│  ┌ Supervisor ┐        ┌──────── EVIDENCE WALL ────────┐   ┌ RCA ┐        │ slow…        │
+│  │ whiteboard │        │ pinned cards                   │   │board│        │ Supervisor:  │
+│  └────────────┘        └────────────────────────────────┘   └─────┘        │ plan: 4 desks│
+│                                                                           │ …            │
+│  [Code]   [Frontend & Hosting]   [Backend & Services]   [Database]        │ RCA ready ▸  │
+│                                                                           │ [Approve]    │
+│  [Observability]   [Knowledge]                            [Action]        │ [Reject]     │
+│                                                                           │ ┌──────────┐ │
+│                                                                           │ │ message  │ │
+└───────────────────────────────────────────────────────────────────────────┴─┴──────────┴─┘
 ```
 
-- Rendered as one SVG floor plan with a fixed viewBox, scaled responsively; on narrow screens the rail and drawer stack below.
-- Agent characters: top-down figures (head + shoulders circle, role color, name tag). Positions are desk seats, the whiteboard, and the evidence wall.
-- Motion uses CSS transforms on SVG groups; `prefers-reduced-motion` switches to instant state changes.
+- One SVG floor plan (fixed viewBox, scales to width). On narrow screens the chat moves below the office.
+- Characters: top-down figures with role colour and name tag; desk shows connector logos or "no connector".
+- Motion: CSS transforms on SVG groups along precomputed aisle paths between desks; `prefers-reduced-motion` switches to instant moves.
 
-### 9.3 Event → office behavior
+### 12.2 Event → office
 
-| Event | Visual |
+| Event | Office |
 |---|---|
-| `investigation_started` | Incident screen shows title; alarm light on |
-| `supervisor_started` | Supervisor walks to whiteboard |
-| `plan_created` | Plan lines appear on whiteboard; task cards travel to chosen desks; skipped desks show reason |
-| `agent_started` | Agent sits, monitor turns on |
-| `tool_called` | Typing animation; speech bubble with tool + query summary |
-| `tool_completed` | Monitor shows ✓ or ✗ with duration |
-| `evidence_added` | Agent walks to evidence wall, card is pinned |
-| `agent_failed` | Red marker over desk with error |
-| `agent_completed` | Agent leans back, desk shows count of findings |
-| `rca_started` | RCA analyst walks to wall, collects cards |
-| `rca_completed` | Root cause written on RCA board; drawer opens |
-| `approval_requested` | Approval desk lights; buttons enabled |
-| `approval_granted/rejected` | Stamp animation on the approval desk |
-| `action_started/completed` | Action agent carries the issue to the "GitHub" door; link appears |
+| `investigation_started` | Incident screen shows the problem; alarm light on |
+| `plan_created` | Supervisor writes the plan on the whiteboard; task cards go to chosen desks; skipped desks show reason |
+| `agent_started` | Agent sits, monitor on |
+| `tool_called` / `tool_completed` | Typing; speech bubble with connector + summary; ✓/✗ on monitor |
+| `agent_question` | Asking agent walks to the target desk; bubble with the question |
+| `agent_answer` | Target answers in a bubble; asker walks back |
+| `evidence_added` | Agent pins a card on the evidence wall |
+| `agent_failed` | Red marker over desk |
+| `rca_started` / `rca_completed` | RCA analyst gathers cards; root cause written on the board; chat shows the RCA |
+| `approval_requested` | Chat shows Approve / Reject / Investigate more |
+| `action_*` | Action agent carries the issue out the "GitHub" door; link appears |
 | `investigation_completed` | Alarm off; "Report ready" |
 
-### 9.4 Frontend state
+### 12.3 State
+A pure reducer `(OfficeState, Event) → OfficeState` drives the office, the chat and the evidence wall from one event stream (built in M0 as `applyEvent` / `useEventStream`). Walking animations are derived from state transitions, so a replay produces the same picture.
 
-- A single `useInvestigationStream(id)` hook opens SSE, applies events to a pure reducer `(OfficeState, Event) → OfficeState`, and reconnects with `Last-Event-ID`.
-- Initial load fetches the snapshot, then streams from its last `seq`. Replay (completed investigations) uses the same reducer.
-- The reducer is the unit-tested core: given an event log, the office state is deterministic.
-
-## 10. Slack integration
-
-- Socket Mode app (`slack-bolt` async) runs inside the API process.
-- `/forgeops investigate <text>` → create investigation (source=slack) → reply with War Room link.
-- Posts to the configured channel: started, RCA summary (root cause, confidence, top 3 evidence), approval message with buttons per recommendation.
-- Button clicks → `Decision(channel="slack", decided_by=<slack user>)` → same resume path as the web.
-- Manifest committed at `docs/slack-app-manifest.yml`.
-
-## 11. Sample SaaS (system under test)
-
-Lives in `sample-saas/`, pushed later to its own GitHub repo (e.g. `forgeops-sample-shop`).
-
-| Component | Details |
-|---|---|
-| `shop-web` | React + Vite shop page (products, cart, checkout); Sentry browser SDK with release = git sha; served by nginx |
-| `checkout-api` | FastAPI; endpoints `/products`, `/cart`, `/checkout`, `/orders`; SQLAlchemy async pool (size from config); Sentry SDK; `prometheus-client` `/metrics` (request duration histogram, status counter, db pool in-use/wait, `app_info{version}`); JSON logs to stdout |
-| `shop-postgres` | Orders, products |
-| `prometheus` | Scrapes checkout-api; alert rules (latency, error rate) |
-| `loki` + `alloy` | Container logs shipped to Loki with `service` label |
-| `grafana` | Dashboards for humans (not used by ForgeOps) |
-| `load-generator` | Small script producing steady shop traffic |
-| CI/CD | GitHub Actions: test → build images (tag = sha) → deploy job on **self-hosted runner** on the dev machine (`docker compose up -d` with new tag) → create Sentry release |
-
-### 11.1 Fault scenarios (real code changes with known root causes)
-
-| ID | Change pushed | Symptom | Tools needed to diagnose |
-|---|---|---|---|
-| F1 | Frontend: checkout button reads undefined field | JS TypeError in browser | Sentry + GitHub |
-| F2 | API: unhandled exception in discount code path | 500s on `/checkout` | Sentry + GitHub (+ Loki) |
-| F3 | Config: DB pool size 20 → 2 | Latency spike, pool wait | Prometheus + GitHub + Actions |
-| F4 | Migration drops index on `orders.user_id` | Slow `/orders` | Prometheus + Loki + GitHub |
-| F5 | Outbound timeout to payment stub lowered to 50 ms | Intermittent 502s | Loki + Sentry + GitHub |
-
-Each scenario lives on its own branch with a script to apply/revert it and a `ground_truth.yaml` (expected category, commit, service) used by the evaluation harness.
-
-## 12. Security
+## 13. Security
 
 | Area | Requirement |
 |---|---|
-| Credentials | `.env` git-ignored; connection secrets Fernet-encrypted in DB; never returned by API, never logged, never in events or prompts |
-| Least privilege | Investigating agents receive only `read` tools; GitHub MCP investigation session runs `--read-only`; write session opened only in the Action node after an approval record exists |
-| Approval integrity | Action executes only recommendation ids present in the stored `Decision`, with the stored parameters (not re-generated by the LLM) |
-| Prompt injection | Tool output wrapped as data; system prompts instruct to ignore embedded instructions; no write tools reachable from investigating agents |
-| Auth | Argon2id hashes; httpOnly, SameSite=Lax session cookie; CSRF token on state-changing routes; login rate limit |
-| Tenancy | `workspace_id` on all rows; repository layer requires it |
-| Audit | Every decision and write action → `audit_log` (actor, channel, action, target, result) |
-| Dependencies | Pinned versions; GitHub MCP server image pinned by tag |
-| Self-hosted runner | Sample repo kept **private** (a public repo lets fork PRs run code on the dev machine); deploy job runs only on `push` to `main` |
+| Credentials | Connection tokens Fernet-encrypted in the DB; never returned, logged, emitted or put in prompts |
+| Least privilege | Per-connector tool allowlist; investigating agents get only `read` tools; MCP read-only modes on; write session opened only in the Action node after a stored approval |
+| Approval integrity | Action executes only the approved recommendation ids, with the stored parameters |
+| Prompt injection | Tool output wrapped as untrusted data; no write tools reachable while investigating |
+| MCP servers | Official servers only, pinned versions; stdio servers run with only their own token in the environment |
+| Auth | Argon2id, httpOnly session cookie, CSRF header, login rate limit (built) |
+| Tenancy | `workspace_id` on every row and query (built) |
+| Audit | Decisions and writes recorded |
 
-## 13. Error handling
+## 14. Error handling
 
 | Failure | Behavior |
 |---|---|
-| Connection unhealthy at start | Capability excluded; `warnings` + RCA `missing_information` |
-| Tool timeout / 5xx | Retry ×2, then `ToolResult(ok=false)`; agent may continue |
-| Agent exception | `agent_failed`, `errors`; graph continues |
-| LLM invalid structured output | One repair retry with validation error; then agent fails |
-| RCA failure | `investigation_failed`; evidence remains visible; report generated with partial data |
-| Server restart during approval wait | Checkpoint resumes on decision |
-| Server restart mid-run | Investigation marked `failed` on startup with reason (MVP does not auto-resume running investigations) |
-| SSE disconnect | Client reconnects with `Last-Event-ID`; server replays |
+| Connection fails its test at start | Its capabilities excluded; listed in `missing_information` |
+| Tool timeout / error | Retry ×2, then failed result the agent can reason about |
+| Agent exception | `agent_failed`; investigation continues |
+| `ask_agent` target fails or has no connector | `agent_question_failed` with reason; asker continues |
+| Invalid structured LLM output | One repair retry, then agent fails |
+| RCA failure | `investigation_failed`; evidence stays visible; partial report |
+| Server restart while awaiting approval | Resumes from checkpoint |
+| Server restart mid-run | Marked failed on startup with reason |
+| Budget reached | Agent forced to submit findings; RCA notes the limit |
 
-## 14. Testing strategy
+## 15. Testing
 
-| Level | What | How |
-|---|---|---|
-| Unit | Models, confidence caps, truncation, policy filter, reducers, service matching | pytest |
-| Connector contract | Each connector against recorded real responses | respx fixtures (test-only, never used at runtime) |
-| Engine | Full graph with a scripted fake LLM: parallelism, partial capabilities, failure paths, interrupt/resume | pytest-asyncio + Postgres test DB |
-| API | Routes, auth, SSE replay, decision conflicts | httpx AsyncClient |
-| Frontend | Office reducer from event logs; components | Vitest + RTL |
-| Integration | ForgeOps against the running sample SaaS | pytest marked `integration`, run manually |
-| Evaluation | F1–F5 scenarios, RCA vs `ground_truth.yaml` | `scripts/evaluate.py` → accuracy table |
+| Level | What |
+|---|---|
+| Unit | Models, confidence caps, truncation, allowlist/policy, capability routing, reducers |
+| Connector contract | Each connector's tool mapping against recorded real responses (test fixtures only) |
+| Engine | Full graph with a scripted fake LLM and fake connectors: parallelism, `ask_agent` limits, partial connectors, failures, interrupt/resume |
+| API | Chat, decision, catalog, connections, SSE |
+| Frontend | Office reducer from event logs, chat, catalog |
+| Real-world | Test scenarios on previews of the owner's website (PRD §10), results recorded in `docs/evaluation.md` |
 
-Runtime code never contains mock or fallback data. Fakes exist only under `tests/`.
+Runtime code never contains mock or fallback data. Fakes live only in tests.
 
-## 15. Configuration
-
-`.env.example` keys:
+## 16. Configuration
 
 ```text
-# core
-FORGEOPS_ENV=development
-FORGEOPS_SECRET_KEY=            # Fernet key (generated by scripts/setup.py)
-FORGEOPS_ADMIN_EMAIL=
-FORGEOPS_ADMIN_PASSWORD=
-DATABASE_URL=postgresql+asyncpg://forgeops:…@postgres:5432/forgeops
-CHROMA_URL=http://chroma:8000
-KNOWLEDGE_VAULT_PATH=/vault
-
-# LLM (OpenRouter)
-OPENROUTER_API_KEY=
-FORGEOPS_MODEL_SUPERVISOR=
-FORGEOPS_MODEL_SPECIALIST=
-FORGEOPS_MODEL_RCA=
-
-# Slack (optional)
-SLACK_BOT_TOKEN=
-SLACK_APP_TOKEN=
-SLACK_INCIDENT_CHANNEL=
+FORGEOPS_ENV, FORGEOPS_SECRET_KEY, FORGEOPS_ADMIN_EMAIL, FORGEOPS_ADMIN_PASSWORD, FORGEOPS_WORKSPACE_NAME
+DATABASE_URL                 # Supabase Postgres (session pooler or direct), postgresql+asyncpg://…
+OPENROUTER_API_KEY
+FORGEOPS_MODEL_SUPERVISOR, FORGEOPS_MODEL_SPECIALIST, FORGEOPS_MODEL_RCA
+KNOWLEDGE_DATA_DIR           # local folder for the Chroma index
 ```
 
-Tool credentials (GitHub token, Sentry token, Prometheus/Loki URLs) are entered on the Connections page, not in `.env`.
-
-## 16. Repository layout
-
-```text
-Forgeops/
-├── backend/
-│   ├── pyproject.toml
-│   ├── alembic/
-│   ├── forgeops/
-│   │   ├── api/            routes, deps, auth, sse
-│   │   ├── slack/          bolt app, messages
-│   │   ├── engine/         graph.py, state.py, agents/, prompts/, llm.py
-│   │   ├── capabilities/   tool spec, registry, policy, wrapper
-│   │   ├── connectors/     github_mcp.py, sentry.py, prometheus.py, loki.py, knowledge.py
-│   │   ├── knowledge/      ingest, chunk, embed, bm25, hybrid
-│   │   ├── events/         bus.py, models.py
-│   │   ├── db/             models, repositories, session
-│   │   ├── security/       crypto, passwords
-│   │   └── config.py
-│   └── tests/
-├── frontend/
-│   └── src/  app/, pages/, war-room/ (floor plan, characters, reducer), api/, components/
-├── sample-saas/            shop-web, checkout-api, observability, faults/, .github/workflows
-├── knowledge-vault/
-├── scripts/                setup.py, evaluate.py
-├── docs/                   PRD.md, TRD.md, reference/, slack-app-manifest.yml
-├── docker-compose.yml
-└── .env.example
-```
+Connector tokens are entered in the Connectors page, not in `.env`.
 
 ## 17. Milestones
 
-Ordered to match the owner's incremental testing path (PRD §8).
-
 | # | Milestone | Delivers | Owner can test |
 |---|---|---|---|
-| M0 | Foundation | Repo tooling, compose (postgres, chroma), FastAPI shell, DB + migrations, auth, workspace, event bus + SSE, React shell + login | Login, empty app |
-| M1 | Engine core + War Room | State, capability registry, LLM client, graph (plan → specialists → review → RCA → approval → report), War Room floor plan driven by events | War Room runs with only Knowledge connected |
-| M2 | Sample shop + Sentry + GitHub | shop-web, checkout-api, postgres; Sentry connector; GitHub MCP connector (read); Connections + Services pages | **Step 1: frontend error (F1)** |
-| M3 | CI/CD + Deployment agent | Sample repo workflows, self-hosted runner, releases; deployment tools | Step 2: "errors after deploy" |
-| M4 | Prometheus + Loki | Observability stack in sample; Prometheus + Loki connectors | Steps 3–4 (F3, F4, F5) |
-| M5 | Knowledge vault RAG | Ingestion, Chroma + BM25 hybrid, Knowledge page | Step 5 |
-| M6 | Actions + Slack | Approval UI complete, GitHub issue creation, reports, audit log, Slack bot | Step 6 |
-| M7 | Evaluation + hardening | `evaluate.py` across F1–F5, docs, setup guide | Accuracy numbers |
+| M0 ✅ | Foundation | Auth, workspaces, investigations, event bus + SSE, React shell | Done |
+| M0.5 | Supabase database | ForgeOps' own data in Supabase; Docker optional; `.env`/README updated | Runs without Docker |
+| M1 | Engine core | Capability registry, MCP client layer, LLM client, graph with Supervisor, specialists, `ask_agent`, RCA, approval pause, report; Knowledge vault connector | Chat an incident about the docs in the vault; see real plan, agents, RCA via events |
+| M2 | War Room + chat | Office floor, characters, walking, evidence wall, RCA board, chat bar with approval buttons | Watch M1 investigations in the office |
+| M3 | Catalog + GitHub + Sentry | Connector catalog UI, connect/test flow, service map; GitHub and Sentry connectors | Test 1 (frontend JS error on a preview) |
+| M4 | Cloudflare + Supabase + Sanity | Three connectors | Tests 2–4 |
+| M5 | Actions + hardening | GitHub issue on approval, audit log, budgets tuning, evaluation write-up | Test 5 + full release definition |
 
-The Knowledge connector is pulled forward in a minimal form into M1 so the engine can be exercised end-to-end with a real (local) data source before external credentials are available.
+Post-MVP: Vercel, Netlify, GitLab, Firebase, MongoDB, Datadog, Prometheus, AWS, Notion, Jira, Slack connectors; OAuth connect flows; sign-up and multiple workspaces; hosting ForgeOps.

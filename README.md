@@ -1,53 +1,53 @@
 # ForgeOps (EOPS — Engineering Operations Platform)
 
-ForgeOps investigates software incidents for engineering teams. A company connects the tools it already uses (GitHub, Sentry, Prometheus, Loki, its runbooks). When something breaks, a **Supervisor** agent plans the investigation, **specialist agents** collect evidence from those tools in parallel, an **RCA agent** correlates the evidence into a root cause with confidence and citations, and a **human approves** any action before it happens.
+ForgeOps finds the root cause of a production problem in minutes instead of hours. A SaaS team connects the tools its product runs on (GitHub, Cloudflare, Vercel, Supabase, Sentry, Sanity, AWS, …) from a **connector catalog**, where every connector is an MCP server. When something breaks, they paste the symptom into the **chat bar**: a **Supervisor** agent splits the work across **specialist agents** that investigate their own tools **in parallel** and **ask each other questions**, and an **RCA** step returns the root cause, the exact point of failure and the evidence. A human approves any action before it happens.
 
-Everything is shown live in the **War Room**: a top-down office where each agent works at its own desk, driven only by real backend events.
+Everything is shown live in the **War Room**: a 2D office where each agent works at its own desk and walks to other desks when they talk, driven only by real backend events.
 
 > **Status:** MVP in development. See the milestones in [docs/TRD.md](docs/TRD.md#17-milestones).
 
 ## How it works
 
 ```text
-Incident (web form or Slack)
+Chat bar: "site is very slow, sometimes shows a warning"
         │
         ▼
-   Supervisor ── plans, picks agents whose tools are connected
+   Supervisor ── plans, picks the desks whose connectors are relevant
         │
-   ┌────┼──────────────┬──────────────┐       (in parallel)
-   ▼    ▼              ▼              ▼
- Code  Deployment  Observability  Knowledge
- GitHub GitHub      Sentry         Markdown vault
-        Actions     Prometheus     (ChromaDB + BM25)
-                    Loki
-   └────┴──────────────┴──────────────┘
+   ┌────────┬───────────────┬──────────────┬──────────┬───────────────┬───────────┐   (parallel,
+   ▼        ▼               ▼              ▼          ▼               ▼               asking each
+  Code   Frontend &      Backend &      Database  Observability   Knowledge         other questions)
+         Hosting         Services
+ GitHub  Cloudflare,     Supabase,      Supabase, Sentry,         Obsidian /
+ GitLab  Vercel,Netlify  Sanity, AWS    Postgres  Datadog         Markdown vault
+   └────────┴───────────────┴──────────────┴──────────┴───────────────┘
                    │  structured evidence → shared state
                    ▼
-                  RCA ── root cause, confidence, evidence, gaps
+                  RCA ── root cause, exact failure point, evidence, confidence
                    │
                    ▼
-            Human approval (web or Slack)
+            Human approval (chat)
                    │
                    ▼
-          Action ── GitHub issue + postmortem report
+          Action ── GitHub issue + report
 ```
 
 Principles:
 - **Real data only.** No mock data at runtime; every finding links to the real tool call behind it.
-- **Works with any subset of tools.** Missing tools are reported as missing information, never invented.
+- **Works with any subset of tools.** Missing connectors are reported as missing information, never invented.
 - **Read-only by default.** Write tools exist only after a recorded human approval.
-- **10 fixed agent roles + pluggable connectors.** New platforms are added as connectors, not new agents.
+- **Fixed agents by system area + pluggable connectors.** New platforms are added as connectors, not new agents.
 
 ## Stack
 
 | Part | Technology |
 |---|---|
-| Backend | Python 3.12, FastAPI, LangGraph, Pydantic, SQLAlchemy, PostgreSQL |
+| Backend | Python 3.12, FastAPI, LangGraph, Pydantic, SQLAlchemy |
+| Database | Supabase Postgres (ForgeOps' own data) |
 | LLM | OpenRouter (model configurable per agent role) |
-| Tools | Official GitHub MCP server; HTTP clients for Sentry, Prometheus, Loki |
+| Connectors | Official MCP servers (GitHub, Cloudflare, Supabase, Sanity, Sentry) |
 | Knowledge | Markdown/Obsidian vault, ChromaDB, BM25 hybrid retrieval |
 | Frontend | React, TypeScript, Vite; SVG/CSS War Room |
-| Integrations | Slack (Socket Mode) |
 
 ## Repository layout
 
@@ -55,10 +55,8 @@ Principles:
 Forgeops/
 ├── backend/          FastAPI app, LangGraph engine, agents, connectors, knowledge
 ├── frontend/         React War Room
-├── sample-saas/      A real sample shop used as the system under test
 ├── knowledge-vault/  Starter runbooks and service docs
-├── scripts/          Setup and evaluation
-└── docs/             PRD, TRD, original spec and diagrams
+└── docs/             PRD, TRD, plans, original spec and diagrams
 ```
 
 ## Documents

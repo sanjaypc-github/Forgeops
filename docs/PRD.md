@@ -3,157 +3,210 @@
 | | |
 |---|---|
 | Product | ForgeOps (Engineering Operations Platform, EOPS) |
-| Document | PRD, MVP scope |
+| Document | PRD v2, MVP scope |
 | Status | Draft for review |
 | Date | 2026-09-21 |
 | Companion | [TRD.md](TRD.md) (technical design), [reference/PROJECT_SPEC.md](reference/PROJECT_SPEC.md) (original vision) |
+
+> v2 replaces v1. Changes: agents grouped by system area (not by vendor), a Claude-style connector catalog where every external connector is an MCP server, agents that ask each other questions, a chat bar that starts investigations, and testing on a real customer website instead of a sample app.
 
 ---
 
 ## 1. Summary
 
-ForgeOps is a SaaS platform that investigates software incidents for engineering teams. A company connects the tools it already uses (GitHub, Sentry, Prometheus, Loki, its runbooks). When something breaks, a Supervisor AI agent plans an investigation, specialist agents collect evidence from those tools **in parallel**, an RCA agent correlates the evidence into a root cause with confidence and citations, and a human approves any action before it happens. The whole investigation is shown live in the **War Room**: a top-down office where each agent works at its own desk, driven only by real backend events.
+ForgeOps is a SaaS product that finds the root cause of a production problem in **10–20 minutes instead of 2–3 hours**.
 
-The MVP is a **minimal, real, deployable product**. It uses no mock data at runtime. Every finding comes from a real API call to a connected tool.
+A SaaS founder or engineering team connects the tools their product runs on (GitHub, Cloudflare, Vercel, Supabase, Sentry, Sanity, AWS, …) from a **connector catalog**, the same way connectors are added in Claude. Each connector is an **MCP server** that gives ForgeOps' AI agents read access to that tool.
+
+When something breaks, the user pastes the symptom into the **chat bar** ("the site is very slow and sometimes shows a warning"). A **Supervisor** agent splits the work across **specialist agents**, one per area of the system. They investigate **in parallel**, each through its own connectors, and **ask each other questions** when they need information from another area. An **RCA** step combines their findings into:
+
+- the **root cause** (why it happened),
+- the **exact point of failure** (commit, file, deploy, query, config, content change),
+- the **evidence** (links to the real commits, logs, errors and deploys behind every claim),
+- the **confidence** and what could not be checked.
+
+Everything is shown live in the **War Room**: a 2D office where each agent sits at a desk and walks to another agent's desk when they talk.
 
 ## 2. Problem
 
-When production breaks, engineers investigate by hand across many tabs: the repo, CI runs, error tracker, metrics, logs, and outdated runbooks. The first 20–40 minutes of every incident are spent collecting context rather than fixing. Small SaaS teams have no dedicated SRE; larger teams page engineers about services they do not own.
+When a SaaS product breaks, someone has to open GitHub, the hosting dashboard, the database console, the error tracker and the docs, and correlate them by hand. This takes a developer 2–3 hours, and small companies often have no one on call who knows every part of the stack. Hiring a debugger or waiting for the one engineer who knows the system is slow and expensive.
 
 ## 3. Target users
 
 | Persona | Situation | What ForgeOps gives them |
 |---|---|---|
-| **SaaS founder / CTO** (primary for MVP) | 5–20 engineers, founders on call, no SRE | A "virtual SRE": connect tools once, get an evidence-backed root cause in minutes |
-| **On-call engineer** at a scale-up | Paged about a service they don't own | The first 30 minutes of investigation done, with runbooks and code changes pulled in |
-| **Platform / SRE lead** | Needs control over AI access to production | Read-only by default, human approval for every write, full audit trail |
+| **SaaS founder / CTO** (primary) | Small team, no dedicated DevOps/SRE, product built on managed services | A "virtual SRE team": connect tools once, get an evidence-backed root cause in minutes |
+| **B2B engineering team** | Several services and tools, on-call rotation | The first hours of investigation done automatically, across every tool at once |
+| **Engineering lead** | Needs control over what AI can access | Read-only by default, human approval for every write, audit trail |
 
 ## 4. Goals and non-goals
 
 ### Goals (MVP)
-1. An engineer can start an investigation from the web app or Slack and see a root cause with cited evidence in under 5 minutes.
-2. Agents investigate **real** tools: GitHub (code + Actions), Sentry, Prometheus, Loki, and a Markdown knowledge vault.
-3. ForgeOps works with **any subset** of connected tools and says clearly what it could not check.
-4. The War Room shows real agent activity live, as an office floor.
-5. No write to any external system happens without explicit human approval.
-6. The product is multi-company ready in its data model (workspaces), with one workspace exposed in the MVP UI.
+1. A user connects their stack from a connector catalog; each connector shows what it can read and whether it can write.
+2. A user pastes a problem into the chat bar and gets a root cause with exact failure point and evidence in **under 20 minutes** (target p50 under 10).
+3. Agents investigate real tools only, in parallel, and ask each other questions.
+4. The War Room office shows real agent work live, including agents walking to each other's desks.
+5. ForgeOps works with any subset of connectors and says clearly what it could not check.
+6. No write to any external system happens without explicit human approval.
+7. The data model is multi-company ready (workspaces); the MVP UI exposes one workspace.
 
 ### Non-goals (MVP)
 - Sign-up, billing, multiple workspaces in the UI, team roles beyond admin.
-- Vercel, Supabase, Kubernetes, Datadog, Jira, PagerDuty connectors (post-MVP; the capability model is built so they plug in without agent changes).
-- Infrastructure, Database and Incident agents doing work (their desks exist in the War Room as "not connected").
-- Automatic remediation (rollbacks, restarts, merges). The only MVP write is creating a GitHub issue.
-- Production hosting decisions (the user decides deployment later; the MVP runs via Docker Compose).
+- OAuth "Sign in with …" connector flows (MVP uses API tokens; OAuth comes with multi-company SaaS).
+- Automatic remediation (rollbacks, restarts, merges). The only MVP write is creating a GitHub issue after approval.
+- Hosting decisions for ForgeOps itself (decided later).
+- Kubernetes, Prometheus, Datadog, AWS, Jira, PagerDuty connectors (they appear in the catalog as "coming soon"; the design supports them without agent changes).
 
-## 5. MVP scope
+## 5. Agents
 
-### 5.1 Agents
+Agents are fixed roles grouped by **area of the system**. The same agents exist for every customer; only their connectors differ.
 
-| Agent | MVP status | Uses capability |
+| Desk | Agent | Investigates | Example connectors |
+|---|---|---|---|
+| Supervisor | **Supervisor** | Understands the problem, plans, assigns tasks, decides when evidence is enough | none |
+| Code | **Code** | What changed in the code: commits, diffs, pull requests | GitHub, GitLab, Bitbucket |
+| Frontend & Hosting | **Frontend & Hosting** | Site deploys, build logs, CDN/edge, domains, SSL, edge functions | Cloudflare, Vercel, Netlify, Hostinger, Firebase Hosting, AWS Amplify |
+| Backend & Services | **Backend & Services** | APIs, serverless functions, auth, CMS, containers | Supabase (functions, auth), Firebase, Sanity, Contentful, AWS Lambda/ECS, Render, Railway, Kubernetes |
+| Database | **Database** | Slow queries, connection limits, locks, schema/migration changes | Supabase Postgres, PostgreSQL, MySQL, MongoDB Atlas, Firestore, Redis |
+| Observability | **Observability** | Errors, stack traces, logs, metrics, traces | Sentry, Datadog, Prometheus, Grafana/Loki, New Relic, CloudWatch |
+| Knowledge | **Knowledge** | Runbooks, architecture docs, past incidents | Obsidian/Markdown vault, Notion, Confluence |
+| RCA | **RCA** | Combines all evidence into root cause, failure point, confidence | none (reads findings) |
+| Action | **Action** | After approval: issue, report, message | GitHub Issues (MVP); Jira, Slack later |
+
+One connector can serve several agents. Connecting Supabase once gives its database abilities to **Database**, its functions and auth to **Backend & Services**, and its logs to **Observability**.
+
+## 6. Connectors
+
+### 6.1 Connector catalog (MVP)
+
+| Connector | Status in MVP | Serves |
 |---|---|---|
-| Supervisor | Active | service map, capability registry |
-| Code | Active | `code` (GitHub) |
-| Deployment | Active | `deployments` (GitHub Actions, releases) |
-| Observability | Active | `errors` (Sentry), `metrics` (Prometheus), `logs` (Loki) |
-| Knowledge | Active | `knowledge` (vault RAG) |
-| RCA | Active | reads shared evidence only |
-| Action | Active, limited | `create_issue` (GitHub), report generation |
-| Infrastructure, Database, Incident | Desk shown, "not connected" | none in MVP |
+| GitHub | Available | Code; Frontend & Hosting (Actions); Action (issues) |
+| Cloudflare | Available | Frontend & Hosting; Backend & Services (Workers); Observability (logs, analytics) |
+| Supabase | Available | Database; Backend & Services; Observability (logs) |
+| Sanity | Available | Backend & Services (content changes) |
+| Sentry | Available | Observability |
+| Knowledge vault (Obsidian/Markdown) | Available | Knowledge |
+| Vercel, Netlify, GitLab, Firebase, MongoDB Atlas, Datadog, Prometheus, AWS, Notion, Jira, Slack | Coming soon | shown in catalog, not connectable |
 
-### 5.2 Connectors
+The first six match the owner's own website (GitHub + Cloudflare + Supabase + Sanity, with Sentry being added), which is the first real test customer.
 
-| Connector | Access | Notes |
-|---|---|---|
-| GitHub | Read (code, PRs, Actions); write only `create_issue` after approval | Via official GitHub MCP server |
-| Sentry | Read | Issues, events, stack traces, releases |
-| Prometheus | Read | PromQL instant/range queries, alerts |
-| Loki | Read | LogQL queries |
-| Knowledge vault | Read | Markdown/Obsidian folder, hybrid search |
-| Slack | Bot | Start investigations, post status/RCA, approve/reject buttons |
+### 6.2 Connector behavior
+- Each connector is an MCP server (official server where one exists). The Knowledge vault is ForgeOps' own search and does not need MCP.
+- Connecting asks for the tool's API token (and project/account ID where needed), tests it, and lists the abilities found.
+- Every ability is labelled **read** or **write**. Only read abilities are used while investigating. Write abilities are off by default and used only by the Action agent after approval.
 
-### 5.3 Sample SaaS (test target, part of the repo)
-A small real online shop — web frontend, checkout API, Postgres — instrumented with Sentry, Prometheus, Loki and Grafana, with its own GitHub repo and CI/CD. It exists so ForgeOps has a real system to investigate; it contains **planned fault scenarios** that are real code changes, each with a known root cause for accuracy testing.
+## 7. User experience
 
-## 6. User stories
+### 7.1 Screens
+- **Sign in**
+- **War Room** (home): the office, with the **chat bar** on the side
+- **Connectors**: catalog grouped by agent, with connect/test/disconnect and read/write abilities
+- **Investigations**: history with status, root cause and duration; any can be replayed in the office
+- **Report**: root cause, failure point, evidence, timeline, recommendations
+
+### 7.2 The office
+- A top-down 2D office floor. Each agent is a character at a labelled desk; desks without a connected connector show "no connector".
+- When the Supervisor assigns tasks, task cards travel to the chosen desks.
+- Working agents type; a speech bubble shows the real tool call ("Supabase: slow queries, last 1 h").
+- When an agent **asks another agent**, it walks to that agent's desk; both show the question and the answer; then it walks back.
+- Findings are pinned to a shared **evidence wall**.
+- The RCA analyst collects the pinned cards and writes the root cause on a board.
+- Every movement is triggered by a real backend event. Refreshing the page replays the same state.
+
+### 7.3 The chat bar
+- The user types or pastes a problem ("site slow, sometimes a warning" + an error message or URL) and presses Enter: an investigation starts.
+- The Supervisor replies in the chat with its plan and progress summaries.
+- When the RCA is ready, the chat shows it with links to the evidence, plus buttons: **Approve actions**, **Reject**, **Investigate more**.
+- After the RCA, the user can ask follow-up questions ("why do you think it's the deploy and not the database?"). The Supervisor answers from the collected evidence, or sends agents back to check.
+
+## 8. User stories
 
 ### Setup
-- **US-1** As an admin, I sign in to ForgeOps with email and password.
-- **US-2** As an admin, I add a connection (GitHub, Sentry, Prometheus, Loki, knowledge vault) by entering its URL/token; ForgeOps tests it and shows healthy/unhealthy and the capabilities it provides.
-- **US-3** As an admin, I see exactly which read and write permissions each connection gives ForgeOps; write tools are off unless I enable them.
-- **US-4** As an admin, I define services (name, aliases, GitHub repo, Sentry project, Prometheus job label, Loki label selector).
-- **US-5** As an admin, I point ForgeOps at a knowledge vault folder and see how many documents are indexed.
-- **US-6** As an admin, I connect Slack and choose the incident channel.
+- **US-1** As an admin, I sign in with email and password.
+- **US-2** As an admin, I open the connector catalog, grouped by agent, and see which connectors are available or coming soon.
+- **US-3** As an admin, I connect a tool by entering its API token (and project ID when needed); ForgeOps tests it and shows the abilities it found, each labelled read or write.
+- **US-4** As an admin, I see which agents each connector powers and which desks have no connector.
+- **US-5** As an admin, I point ForgeOps at my knowledge vault (Obsidian folder or Markdown in a repo) and see how many documents are indexed.
+- **US-6** As an admin, I describe my product's services once (name, repo, hosting project, database project) so agents know where to look.
 
 ### Investigating
-- **US-7** As an engineer, I describe an incident in the web form (text, optional service, optional time window) and an investigation starts immediately.
-- **US-8** As an engineer, I type `/forgeops investigate <description>` in Slack and get a link to the live War Room.
-- **US-9** As an engineer, I watch the War Room: the Supervisor plans, agents work at their desks, tool calls appear as speech bubbles, evidence cards are pinned to the board.
-- **US-10** As an engineer, I see which agents were skipped and why (not relevant, or tool not connected).
-- **US-11** As an engineer, I open any evidence card and see the exact source: commit link, Sentry issue link, PromQL/LogQL query, log excerpt.
+- **US-7** As a user, I paste a problem into the chat bar and an investigation starts immediately.
+- **US-8** As a user, I watch the office: the Supervisor plans, agents work at their desks, walk to each other to ask questions, and pin findings to the evidence wall.
+- **US-9** As a user, I see which agents were skipped and why (not relevant, or no connector).
+- **US-10** As a user, I open any evidence card and see its exact source (commit link, deploy ID, log lines, query, Sentry issue).
+- **US-11** As a user, I read each agent-to-agent question and answer in the event feed.
 
 ### Deciding
-- **US-12** As an engineer, I read the RCA: root cause, confidence, supporting and contradicting evidence, alternative hypotheses, what could not be checked.
-- **US-13** As an engineer, I approve or reject each proposed action, or send the investigation back with a note ("also check the Redis change").
-- **US-14** As an engineer, I can approve/reject from Slack buttons.
-- **US-15** As an engineer, after approval, a GitHub issue is created with the RCA and evidence links, and a postmortem report is generated.
-- **US-16** As an admin, I see an audit log of every approval, rejection and write action (who, when, what).
+- **US-12** As a user, I read the RCA: root cause, exact failure point, confidence, supporting and contradicting evidence, what could not be checked.
+- **US-13** As a user, I approve or reject proposed actions, or ask for more investigation with a note.
+- **US-14** As a user, on approval a GitHub issue is created with the RCA and evidence links, and a report is generated.
+- **US-15** As a user, I ask follow-up questions in the chat after the RCA.
+- **US-16** As an admin, I see an audit log of approvals, rejections and write actions.
 
 ### History
-- **US-17** As an engineer, I see a list of past investigations with status, service, root cause and duration, and can reopen any War Room as a replay.
+- **US-17** As a user, I see past investigations and replay any of them in the office.
 
-## 7. Key product behaviors
+## 9. Key product behaviors
 
-1. **Real data only.** If a tool is not connected or a call fails, ForgeOps says so; it never fills gaps with invented data.
-2. **Graceful partial coverage.** With only Sentry + GitHub connected, a frontend error investigation still completes; the RCA lists "metrics/logs not connected" under missing information.
-3. **Evidence is traceable.** Every finding links to the tool calls that produced it.
-4. **Honest confidence.** RCA confidence is capped when it cites little or conflicting evidence.
-5. **Human in the loop.** Investigating agents hold read-only tools. Write tools exist only in the Action step, only after a recorded approval.
-6. **Live and truthful UI.** War Room animation is driven only by backend events; refreshing the page replays the same state.
+1. **Real data only.** No invented data. If a connector is missing or a call fails, ForgeOps says so.
+2. **Partial coverage is fine.** With only GitHub + Sentry connected, an investigation still completes and lists what it could not check.
+3. **Every claim is traceable** to the tool calls that produced it.
+4. **Honest confidence.** Confidence is capped when evidence is thin or contradictory.
+5. **Human in the loop.** Investigating agents only read. Writes need a recorded approval.
+6. **Truthful office.** Animation only follows real backend events.
+7. **Bounded cost and time.** Each agent and each investigation has limits on tool calls, agent-to-agent questions, time and LLM spend.
 
-## 8. Testing path (owner-driven)
+## 10. Testing with a real website
 
-The product owner tests incrementally. The MVP must support each step without code changes, only by connecting more tools:
+The first test customer is the owner's own website (Cloudflare + GitHub + Supabase + Sanity, with Sentry being added).
 
-| Step | Connected | Example incident on the sample SaaS |
-|---|---|---|
-| 1 | GitHub + Sentry | "Checkout button throws an error on the website" (frontend JS error) |
-| 2 | + GitHub Actions | "Errors started after the last deploy" |
-| 3 | + Prometheus | "Checkout API latency is high" |
-| 4 | + Loki | "Orders failing with 500s" |
-| 5 | + Knowledge vault | Any of the above, with runbook guidance |
-| 6 | + Slack | Start from Slack, approve from Slack |
+| Step | Connected | Deliberate problem (on a preview branch) | Expected finding |
+|---|---|---|---|
+| 1 | GitHub + Sentry | JavaScript error in a page component | Commit + file + line from the stack trace |
+| 2 | + Cloudflare | Broken build or bad redirect/header rule | Failing deploy or config change |
+| 3 | + Supabase | Slow query (missing index) or wrong row-level security policy | Query/policy + the migration commit |
+| 4 | + Sanity | Published content missing a required field that the site reads | Content change + the code path that breaks |
+| 5 | + Knowledge vault | Any of the above | Matching runbook cited |
 
-## 9. Success metrics (MVP)
+A **preview** is a separate copy of the site that Cloudflare builds automatically when a non-`main` branch is pushed; the live site is untouched. Each test uses a branch like `forgeops-test-1` with one deliberate bug, visited a few times so the tools record errors.
+
+## 11. Success metrics (MVP)
 
 | Metric | Target |
 |---|---|
-| RCA correct on sample-SaaS fault scenarios (root cause matches known cause) | ≥ 4 of 5 scenarios with all tools connected |
-| Time from incident submit to RCA | < 5 minutes (p50) |
+| Correct root cause on the test scenarios (§10) with relevant connectors connected | ≥ 4 of 5 |
+| Time from chat message to RCA | p50 < 10 min, p95 < 20 min |
 | Evidence claims with a traceable tool call | 100% |
 | Writes executed without approval | 0 |
-| War Room events matching backend events after refresh | 100% |
+| Office animations matching backend events after refresh | 100% |
 
-## 10. Credentials the user provides
+## 12. Credentials the owner provides
 
 | Account | Needed at | Items |
 |---|---|---|
-| OpenRouter | Engine milestone | API key with spending limit |
-| GitHub | Connector milestone | Fine-grained token (Contents/PRs/Actions read, Issues read+write) on the sample repo; empty sample repo; self-hosted runner registration |
-| Sentry | Connector milestone | Organization; 2 projects (web, api); DSNs; auth token with read scopes |
-| Slack | Slack milestone | Workspace; app from provided manifest; bot token, app token, channel ID |
+| OpenRouter | Engine milestone | API key with a spending limit |
+| Supabase (for ForgeOps' own data) | Now | A new, separate Supabase project for ForgeOps; its Postgres connection string |
+| GitHub | Connector milestone | Fine-grained token, read access to the website repo (Issues write for the Action agent) |
+| Sentry | Connector milestone | Auth token with read scopes, organization and project |
+| Cloudflare | Connector milestone | API token with read permissions, account ID |
+| Supabase (website's project) | Connector milestone | Personal access token, project ref |
+| Sanity | Connector milestone | Read token, project ID, dataset |
 
-All secrets live in `.env` (git-ignored) or are entered on the Connections page and stored encrypted.
+Secrets live in `.env` (git-ignored) or are entered on the Connectors page and stored encrypted.
 
-## 11. Risks
+## 13. Risks
 
 | Risk | Mitigation |
 |---|---|
-| LLM makes unsupported claims | Evidence citations required; confidence caps; RCA prompt forbids uncited claims |
-| Prompt injection via logs/commit messages | Tool output treated as data; investigating agents are read-only; writes need human approval with visible parameters |
-| Third-party MCP server risk | Only the official GitHub MCP server, pinned version, read-only mode; others use direct HTTP clients |
-| API rate limits / cost | Per-agent tool-call budget, timeouts, result truncation, OpenRouter spend limit |
-| Free-tier limits (Sentry, OpenRouter) | Document limits; degrade gracefully |
+| The needed signal isn't recorded (e.g. browser errors without a tracker) | Report "not visible" honestly; recommend the connector that would reveal it |
+| Short log retention on free plans | Investigate soon after the problem; show the retention window as a limitation |
+| LLM makes unsupported claims | Citations required; confidence caps |
+| Prompt injection through logs, commit messages or content | Tool output treated as data; investigating agents cannot write |
+| Third-party MCP server risk | Official servers only, pinned versions, read-only modes and a per-connector allowlist of tools |
+| Agents asking each other in loops | Limits on questions per agent and per investigation; no nested questions |
+| API rate limits / LLM cost | Per-agent budgets, timeouts, result truncation, OpenRouter spend limit |
 
-## 12. Release definition (MVP done)
+## 14. Release definition (MVP done)
 
-Given the incident "Checkout API latency increased after the last deployment" on the sample SaaS with all MVP tools connected, ForgeOps: creates an investigation, plans, runs relevant specialists concurrently against real tools, writes evidence to shared state, runs RCA with supporting evidence, confidence and uncertainty, requests approval (web or Slack), creates a GitHub issue and report on approval, and shows every real execution event in the War Room.
+Given a deliberate bug on a preview of the owner's website and the symptom pasted into the chat bar, with GitHub, Cloudflare, Supabase, Sanity, Sentry and the knowledge vault connected, ForgeOps plans, runs the relevant agents in parallel against the real tools, shows at least one real agent-to-agent question in the office, produces an RCA naming the root cause and exact failure point with evidence and confidence, asks for approval, creates a GitHub issue and report on approval, and every step is visible live in the War Room.
