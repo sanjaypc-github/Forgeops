@@ -43,7 +43,7 @@ backend/
     llm/base.py      Message, ToolSchema, ToolCall, LLMRequest, LLMReply, LLM protocol, errors
     llm/openrouter.py OpenRouterLLM
     llm/structured.py ask_structured (forced tool + repair)
-    prompts/         common.md, supervisor_plan.md, supervisor_review.md, supervisor_followup.md,
+    prompt_templates/ common.md, supervisor_plan.md, supervisor_review.md, supervisor_followup.md,
                      specialist.md, rca.md
     prompts.py       load_prompt(), render()
     roster.py        AgentProfile per agent (title, area, capabilities, focus)
@@ -829,7 +829,7 @@ async def test_delete(auth_client, tmp_path):
 
 ### Task 8: Harness specification, prompts and roster
 
-**Files:** Create `docs/HARNESS.md`, `forgeops/engine/prompts/{common,supervisor_plan,supervisor_review,supervisor_followup,specialist,rca}.md`, `engine/prompts.py`, `engine/roster.py`. Test: `tests/engine/test_prompts.py`.
+**Files:** Create `docs/HARNESS.md`, `forgeops/engine/prompt_templates/{common,supervisor_plan,supervisor_review,supervisor_followup,specialist,rca}.md` (renamed from `prompts/`: a folder cannot share the `prompts.py` module name), `engine/prompts.py`, `engine/roster.py`. Test: `tests/engine/test_prompts.py`.
 
 **Interfaces — Produces:**
 - `roster.AgentProfile(id, title, area, focus: str)`; `roster.PROFILES: dict[AgentId, AgentProfile]` for all 9 agents. Focus text states what the agent investigates and the typical questions it answers (e.g. database: "slow queries, connection limits, locks, migrations, row-level security").
