@@ -87,7 +87,7 @@ Requirements: [uv](https://docs.astral.sh/uv/), Node.js 20+, and a Supabase proj
    ```bash
    cd backend
    uv run alembic upgrade head
-   uv run uvicorn forgeops.main:create_app --factory --reload --port 8000
+   uv run python -m forgeops.devtools.serve      # API on http://localhost:8000
    ```
 
 4. Start the web app (new terminal):
@@ -99,6 +99,17 @@ Requirements: [uv](https://docs.astral.sh/uv/), Node.js 20+, and a Supabase proj
    ```
 
 Sign in with `FORGEOPS_ADMIN_EMAIL` and `FORGEOPS_ADMIN_PASSWORD` from `.env`.
+
+## Run an investigation
+
+Add your OpenRouter key to `.env` (`OPENROUTER_API_KEY=...`), then run one live investigation against the starter runbooks in `knowledge-vault/`:
+
+```bash
+cd backend
+uv run python -m forgeops.devtools.smoke "Checkout requests are timing out and users see errors"
+```
+
+It prints every agent event as it happens (plan, tool calls, questions between desks, evidence), then the root cause, confidence and recommendations. The agents' rules are described in [docs/HARNESS.md](docs/HARNESS.md).
 
 Tests:
 
