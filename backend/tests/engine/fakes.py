@@ -53,3 +53,46 @@ class HashEmbedder:
             norm = math.sqrt(sum(v * v for v in vec)) or 1.0
             vectors.append([v / norm for v in vec])
         return vectors
+
+
+class FakeConnector:
+    """In-memory connector with fixed tool specs and scripted responses."""
+
+    def __init__(self, connection_id, connector_type, tools, responses, delay: float = 0.0):
+        self.connection_id = connection_id
+        self.connector_type = connector_type
+        self._tools = list(tools)
+        self._responses = dict(responses)
+        self._delay = delay
+        self.calls: list[tuple[str, dict]] = []
+        self.closed = False
+
+    async def health_check(self):
+        from forgeops.capabilities.models import HealthStatus
+        return HealthStatus(ok=True, detail=f"{len(self._tools)} tools")
+
+    async def list_tools(self):
+        return list(self._tools)
+
+    async def call(self, tool_name, arguments):
+        self.calls.append((tool_name, arguments))
+        if self._delay:
+            await asyncio.sleep(self._delay)
+        response = self._responses[tool_name]
+        if isinstance(response, Exception):
+            raise response
+        return response(arguments) if callable(response) else response
+
+    async def aclose(self):
+        self.closed = True
+
+
+def collect_events():
+    """Returns (events, emit) where emit appends EventIn objects to events."""
+    events = []
+
+    async def emit(event):
+        events.append(event)
+        return event
+
+    return events, emit
