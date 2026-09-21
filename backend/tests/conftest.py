@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import os
 
 import pytest
@@ -88,3 +89,10 @@ async def auth_client(client):
     assert response.status_code == 200, response.text
     client.headers["X-CSRF-Token"] = response.json()["csrf_token"]
     return client
+
+
+if sys.platform == "win32":
+    @pytest.fixture(scope="session")
+    def event_loop_policy():
+        # psycopg's async driver needs the selector loop on Windows (production runs on Linux).
+        return asyncio.WindowsSelectorEventLoopPolicy()
