@@ -1,150 +1,70 @@
-# EOPS (Engineering Operations Platform) MVP v1.0
+# ForgeOps (EOPS — Engineering Operations Platform)
 
-EOPS is an AI-driven Engineering Operations Platform designed to automate incident triage, troubleshoot system failures, and perform root-cause analysis (RCA). Think of EOPS not just as an incident investigation assistant, but as an **AI Operating System for Engineering Teams**—modular, extensible, and built to orchestrate specialized agents running in parallel to solve complex operational issues.
+ForgeOps investigates software incidents for engineering teams. A company connects the tools it already uses (GitHub, Sentry, Prometheus, Loki, its runbooks). When something breaks, a **Supervisor** agent plans the investigation, **specialist agents** collect evidence from those tools in parallel, an **RCA agent** correlates the evidence into a root cause with confidence and citations, and a **human approves** any action before it happens.
 
----
+Everything is shown live in the **War Room**: a top-down office where each agent works at its own desk, driven only by real backend events.
 
-## 🏗️ System Architecture
+> **Status:** MVP in development. See the milestones in [docs/TRD.md](docs/TRD.md#17-milestones).
 
-```
-                          USER
-                            │
-                            ▼
-               React Dashboard (Frontend)
-                            │
-                            ▼
-                    FastAPI Backend (API)
-                            │
-                            ▼
-              LangGraph Supervisor / Planner Agent
-                            │
-      ┌─────────────────────┼─────────────────────┐
-      │                     │                     │
-      ▼                     ▼                     ▼
- GitHub Agent          Logs Agent         Knowledge Agent
-      │                     │                     │
-      ▼                     ▼                     ▼
- GitHub Tool         Log Parser Tool      Knowledge Tool
-      │                     │                     │
- GitHub API          Local Log Files      ChromaDB
-                                                ▲
-                                                │
-                                     Embedding Model
-                                                ▲
-                                                │
-                                      Chunking Pipeline
-                                                ▲
-                                                │
-                                    Obsidian Vault (.md)
-
-═══════════════════════════════════════════════════════════════
-              Shared Investigation State (LangGraph)
-═══════════════════════════════════════════════════════════════
-                            │
-                            ▼
-                  Root Cause Analysis Agent
-                            │
-                            ▼
-                  Human Approval Interface
-                            │
-                            ▼
-               Investigation Report Generator
-                            │
-                            ▼
-                    Dashboard + Markdown Report
-```
-
----
-
-## 📂 Repository Structure
-
-The codebase is organized as follows:
+## How it works
 
 ```text
-eops-mvp/
-├── backend/                  # FastAPI Application Server
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py           # FastAPI Entry Point (Endpoints: /investigate, /status, etc.)
-│   │   ├── config.py         # System configuration & environment loading
-│   │   └── routes.py         # Route handlers
-│   └── requirements.txt      # Python dependencies
-│
-├── frontend/                 # React UI Dashboard (Vite-based)
-│   ├── src/                  # Components, Hooks, and Pages
-│   ├── package.json
-│   └── vite.config.js
-│
-├── agents/                   # LangGraph AI Agents
-│   ├── __init__.py
-│   ├── supervisor/           # Coordinator Agent (Decides & routes sub-agents)
-│   ├── github/               # Source code change analyst
-│   ├── logs/                 # Log file parser and anomaly finder
-│   ├── knowledge/            # RAG Agent for runbooks and documentation
-│   └── rootcause/            # Synthesizer Agent (RCA & remediation steps)
-│
-├── tools/                    # Reusable Agent Tools (API Integrations & local tools)
-│   ├── __init__.py
-│   ├── github/               # Github REST API connector
-│   ├── logs/                 # Local log parsing utilities
-│   └── rag/                  # ChromaDB vector store querying tool
-│
-├── memory/                   # LangGraph State Definitions
-│   ├── __init__.py
-│   └── state.py              # Shared Investigation State schema
-│
-├── langgraph/                # Workflow Engine
-│   ├── __init__.py
-│   └── graph.py              # Graph definition, compilation, and supervisor logic
-│
-├── knowledge/                # Ingestion Pipeline & Raw Docs
-│   ├── obsidian_vault/       # Source Markdown documents (Services, Runbooks, etc.)
-│   └── ingestion/            # Offline indexing, chunking, and embedding pipelines
-│
-├── vector_db/                # Local ChromaDB persistent storage (Git ignored)
-├── reports/                  # Generated Investigation Reports (Markdown + JSON)
-├── datasets/                 # Mock logs and incident logs for local testing
-├── docs/                     # Architecture designs, manuals, and schemas
-├── tests/                    # Unit and integration tests
-└── .gitignore                # File exclusions (env, DB, build outputs)
+Incident (web form or Slack)
+        │
+        ▼
+   Supervisor ── plans, picks agents whose tools are connected
+        │
+   ┌────┼──────────────┬──────────────┐       (in parallel)
+   ▼    ▼              ▼              ▼
+ Code  Deployment  Observability  Knowledge
+ GitHub GitHub      Sentry         Markdown vault
+        Actions     Prometheus     (ChromaDB + BM25)
+                    Loki
+   └────┴──────────────┴──────────────┘
+                   │  structured evidence → shared state
+                   ▼
+                  RCA ── root cause, confidence, evidence, gaps
+                   │
+                   ▼
+            Human approval (web or Slack)
+                   │
+                   ▼
+          Action ── GitHub issue + postmortem report
 ```
 
----
+Principles:
+- **Real data only.** No mock data at runtime; every finding links to the real tool call behind it.
+- **Works with any subset of tools.** Missing tools are reported as missing information, never invented.
+- **Read-only by default.** Write tools exist only after a recorded human approval.
+- **10 fixed agent roles + pluggable connectors.** New platforms are added as connectors, not new agents.
 
-## 📊 Core System Components
+## Stack
 
-### 1. React Dashboard (Frontend)
-- **Role:** Human-in-the-loop (HITL) interface.
-- **Features:** Incident input panel, real-time agent execution timeline (LangGraph execution visualization), evidence board (commits, log snippets, runbook pages), Root Cause Analysis preview, and human interactive approval button (Approve / Reject / Request Investigation).
+| Part | Technology |
+|---|---|
+| Backend | Python 3.12, FastAPI, LangGraph, Pydantic, SQLAlchemy, PostgreSQL |
+| LLM | OpenRouter (model configurable per agent role) |
+| Tools | Official GitHub MCP server; HTTP clients for Sentry, Prometheus, Loki |
+| Knowledge | Markdown/Obsidian vault, ChromaDB, BM25 hybrid retrieval |
+| Frontend | React, TypeScript, Vite; SVG/CSS War Room |
+| Integrations | Slack (Socket Mode) |
 
-### 2. FastAPI Backend
-- **Role:** Web server and API gateway.
-- **Endpoints:**
-  - `POST /api/investigate` - Starts a new LangGraph investigation.
-  - `GET /api/status/{investigation_id}` - Polls the current execution state.
-  - `POST /api/approve/{investigation_id}` - Submits human approval to proceed with report generation.
-  - `GET /api/reports/{investigation_id}` - Fetches the finalized markdown/JSON investigation report.
+## Repository layout
 
-### 3. LangGraph Supervisor
-- **Role:** The Orchestration Brain. Actively decodes the incident details, schedules specialized agents to execute in parallel, and coordinates their results.
+```text
+Forgeops/
+├── backend/          FastAPI app, LangGraph engine, agents, connectors, knowledge
+├── frontend/         React War Room
+├── sample-saas/      A real sample shop used as the system under test
+├── knowledge-vault/  Starter runbooks and service docs
+├── scripts/          Setup and evaluation
+└── docs/             PRD, TRD, original spec and diagrams
+```
 
-### 4. Agent Framework
-- **GitHub Agent:** Performs source control delta analysis using the **GitHub Tool** (connects to GitHub API). Writes recent commit messages, authors, and affected files to the shared state.
-- **Logs Agent:** Analyzes system logs using the **Log Parser Tool** to identify service exceptions, HTTP 5xx codes, Redis timeouts, or performance bottlenecks.
-- **Knowledge Agent:** Acts as the RAG client, using the **Knowledge Tool** to search vector-indexed documentation.
-- **Root Cause Agent:** Does not call tools. Evaluates the merged `Shared State` to formulate hypotheses, assign confidence scores, and propose corrective actions.
+## Documents
 
-### 5. Knowledge Layer & Indexer
-- **Obsidian Vault:** A local directory containing Markdown files representing Runbooks, Service docs, Incident histories, API specs, and Troubleshooting guides.
-- **Offline Indexer:** A Python ingestion script that parses, chunks, embeds (using LangChain/OpenAI/Ollama embeddings), and upserts text segments into **ChromaDB**.
+- [Product requirements (PRD)](docs/PRD.md)
+- [Technical requirements (TRD)](docs/TRD.md) — architecture, flow diagrams, contracts, milestones
+- [Original project spec](docs/reference/PROJECT_SPEC.md) and [architecture diagrams](docs/reference/ARCHITECTURE_DIAGRAMS.md)
 
----
-
-## 🔄 Data & Execution Flow
-
-1. **Incident Trigger:** An engineer inputs an incident description (e.g., *"Checkout API latency increased significantly after deployment"*).
-2. **Supervisor Planning:** The Supervisor agent runs, parses the input, and spins up `GitHub Agent`, `Logs Agent`, and `Knowledge Agent` concurrently.
-3. **Execution & State Merge:** Each agent executes its respective tools and writes findings directly to the `Shared State` (no agent talks directly to another).
-4. **Root Cause Analysis:** Once sub-agents complete, the `Root Cause Agent` reads the consolidated `Shared State`, synthesizes the clues, and drafts the RCA.
-5. **Human Approval:** Execution pauses at a state node awaiting human interaction (Approval/Rejection) via the React dashboard.
-6. **Report Generation:** Upon approval, the final markdown report is generated, saved to `reports/`, and displayed on the dashboard.
+Setup instructions will be added with milestone M0.
