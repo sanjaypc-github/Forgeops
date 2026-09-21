@@ -67,4 +67,26 @@ Forgeops/
 - [Technical requirements (TRD)](docs/TRD.md) — architecture, flow diagrams, contracts, milestones
 - [Original project spec](docs/reference/PROJECT_SPEC.md) and [architecture diagrams](docs/reference/ARCHITECTURE_DIAGRAMS.md)
 
-Setup instructions will be added with milestone M0.
+## Local setup
+
+Requirements: Docker Desktop, [uv](https://docs.astral.sh/uv/), Node.js 20+.
+
+```bash
+cd backend
+uv sync
+uv run python -m forgeops.devtools.envfile   # creates ../.env with generated secrets
+cd ..
+docker compose up -d --build                 # Postgres + API on http://localhost:8000
+cd frontend
+npm install
+npm run dev                                  # web app on http://localhost:5173
+```
+
+Sign in with `FORGEOPS_ADMIN_EMAIL` and `FORGEOPS_ADMIN_PASSWORD` from `.env`.
+
+Tests:
+
+```bash
+cd backend && uv run pytest     # needs the Postgres container running
+cd frontend && npm test
+```
