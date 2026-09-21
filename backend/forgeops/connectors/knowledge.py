@@ -10,6 +10,20 @@ from forgeops.knowledge.chunking import chunk_markdown
 from forgeops.knowledge.index import KnowledgeIndex
 
 _SKIP_DIRS = {".obsidian", ".trash", ".git", "node_modules"}
+
+
+def resolve_vault_path(raw: str, allowed_roots: list[str]) -> Path:
+    """Resolve a vault path (following symlinks) and require it to be inside an allowed root."""
+    resolved = Path(raw).expanduser().resolve()
+    for root in allowed_roots:
+        if resolved.is_relative_to(Path(root).expanduser().resolve()):
+            return resolved
+    raise ValueError(
+        "The vault folder must be inside one of the allowed folders set by the server operator "
+        "(KNOWLEDGE_VAULT_ROOTS in .env)"
+    )
+
+
 SEARCH_SCHEMA = {
     "type": "object",
     "properties": {

@@ -50,6 +50,7 @@ def settings(database_url, tmp_path_factory) -> Settings:
         forgeops_workspace_name="Test workspace",
         openrouter_api_key=None,
         knowledge_data_dir=str(tmp_path_factory.mktemp("knowledge-index")),
+        knowledge_vault_roots=[str(tmp_path_factory.getbasetemp())],
     )
 
 

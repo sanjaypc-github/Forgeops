@@ -19,9 +19,9 @@ class CapabilityRegistry:
         self.warnings = warnings
 
     @classmethod
-    async def build(cls, connectors: list[Connector]) -> "CapabilityRegistry":
+    async def build(cls, connectors: list[Connector], warnings: list[str] | None = None) -> "CapabilityRegistry":
         tools: list[ToolSpec] = []
-        warnings: list[str] = []
+        warnings = list(warnings or [])
         for connector in connectors:
             try:
                 tools.extend(await connector.list_tools())

@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from forgeops.api.deps import CurrentUser, current_user, require_csrf
 from forgeops.connectors.definitions import CATALOG, ConfigField
 from forgeops.connectors.factory import build_connector
+from forgeops.connectors.knowledge import resolve_vault_path
 from forgeops.db.models import AuditLog, Connection
 from forgeops.engine.models import AgentId
 
@@ -57,7 +58,7 @@ async def list_connections(request: Request, user: CurrentUser = Depends(current
         return list(rows)
 
 
-def _validate(body: ConnectionCreate) -> None:
+def _validate(body: ConnectionCreate, allowed_roots: list[str]) -> None:
     definition = CATALOG.get(body.type)
     if definition is None or definition.status != "available":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Connector {body.type!r} is not available")
@@ -67,14 +68,19 @@ def _validate(body: ConnectionCreate) -> None:
     ]
     if missing:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Missing required fields: {', '.join(missing)}")
+    if definition.type == "knowledge":
+        try:
+            resolve_vault_path(str(body.config["vault_path"]), allowed_roots)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
 
 @router.post("/connections", status_code=status.HTTP_201_CREATED, response_model=ConnectionOut)
 async def create_connection(
     body: ConnectionCreate, request: Request, user: CurrentUser = Depends(require_csrf)
 ) -> Connection:
-    _validate(body)
     state = request.app.state
+    _validate(body, state.settings.knowledge_vault_roots)
     row = Connection(
         workspace_id=user.workspace_id, type=body.type, name=body.name.strip(), config=body.config,
         secret_encrypted=state.secret_box.encrypt_json(body.secrets) if body.secrets else None,

@@ -40,6 +40,34 @@ async def test_unknown_type_and_missing_fields_are_rejected(auth_client):
         "type": "knowledge", "name": "x", "config": {}, "secrets": {}})).status_code == 422
 
 
+async def test_vault_outside_allowed_roots_is_rejected(auth_client, app, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("# private", "utf-8")
+    app.state.settings = app.state.settings.model_copy(
+        update={"knowledge_vault_roots": [str(tmp_path / "allowed")]})
+    resp = await auth_client.post("/api/connections", json={
+        "type": "knowledge", "name": "Sneaky", "config": {"vault_path": str(outside)}, "secrets": {}})
+    assert resp.status_code == 422 and "allowed" in resp.json()["detail"]
+    traversal = str(tmp_path / "allowed" / ".." / "outside")
+    resp = await auth_client.post("/api/connections", json={
+        "type": "knowledge", "name": "Sneaky2", "config": {"vault_path": traversal}, "secrets": {}})
+    assert resp.status_code == 422
+
+
+def test_factory_refuses_stored_path_outside_roots(app, tmp_path):
+    import pytest
+
+    from forgeops.connectors.factory import build_connector
+    from forgeops.db.models import Connection
+
+    settings = app.state.settings.model_copy(update={"knowledge_vault_roots": [str(tmp_path / "allowed")]})
+    row = Connection(id="con_x", workspace_id="ws_x", type="knowledge", name="x",
+                     config={"vault_path": str(tmp_path)})
+    with pytest.raises(ValueError, match="allowed"):
+        build_connector(row, app.state.secret_box, settings, app.state.embedder)
+
+
 async def test_requires_csrf(auth_client, tmp_path):
     auth_client.headers.pop("X-CSRF-Token")
     resp = await auth_client.post("/api/connections", json={

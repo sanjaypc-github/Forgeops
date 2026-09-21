@@ -31,6 +31,8 @@ class Settings(BaseSettings):
 
     # Knowledge vault search index location
     knowledge_data_dir: str = "../.forgeops-data/knowledge"
+    # Operator-controlled folders that knowledge vaults must live inside (JSON list in .env).
+    knowledge_vault_roots: list[str] = ["../knowledge-vault"]
 
     @property
     def is_production(self) -> bool:
