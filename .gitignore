@@ -1,35 +1,22 @@
-# Python cache
+# env and secrets
+.env
+.env.*
+!.env.example
+
+# python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.pytest_cache/
 .venv/
-env/
-venv/
-ENV/
+.pytest_cache/
+.ruff_cache/
 
-# Vector database storage
-vector_db/
+# node
+node_modules/
+dist/
+coverage/
 
-# Local generated artifacts and reports
-reports/*.md
-reports/*.json
-!reports/README.md
-
-# Frontend dependencies and builds
-frontend/node_modules/
-frontend/dist/
-frontend/.env.local
-frontend/.env.*.local
-
-# IDEs
+# editors / OS
 .vscode/
 .idea/
-
-# OS files
 .DS_Store
 Thumbs.db
-
-# Environment variables
-.env
