@@ -6,7 +6,7 @@
 
 **Architecture:** LangGraph `StateGraph` (plan → `Send` fan-out to one `specialist` node per task → review → rca → `interrupt` approval → action → report) checkpointed by `AsyncPostgresSaver` in the private schema. A thin LLM layer talks to OpenRouter with the OpenAI SDK; every structured output is a forced tool call validated by Pydantic with one repair retry. Agents only reach tools through a `CapabilityRegistry` that routes connector capabilities to agents and enforces read-only for investigators. A `ToolRunner` wraps every call with timeout, retry, truncation, events and provenance records. An `InvestigationRunner` owns background runs, status transitions and resume.
 
-**Tech Stack:** Python 3.12, LangGraph 1.2, langgraph-checkpoint-postgres 3.1 (psycopg 3 + psycopg-pool), OpenAI Python SDK 3.x (OpenRouter base URL), MCP Python SDK 2.2 (`ClientSession`, `stdio_client`, `MCPServer` for the test server), ChromaDB 1.5 (embedded), rank-bm25, respx (tests).
+**Tech Stack:** Python 3.12, LangGraph 1.2, langgraph-checkpoint-postgres 3.1 (psycopg 3 + psycopg-pool), OpenAI Python SDK 3.x (OpenRouter base URL), MCP Python SDK 2.2 (`ClientSession`, `stdio_client`, `MCPServer` for the test server), ChromaDB 1.5 (embedded), rank-bm25, httpx2.MockTransport (tests; the OpenAI SDK 3.x uses httpx2, which respx cannot mock).
 
 **Spec:** [docs/TRD.md](../../TRD.md) §3–§9, §11, §13–§15; [docs/PRD.md](../../PRD.md) §5, §7.3, §8 (US-7…US-15), §9. Harness rules: [docs/HARNESS.md](../../HARNESS.md) (written in Task 8).
 
@@ -90,7 +90,7 @@ knowledge-vault/                         + a few real runbooks for the smoke run
 
 **Interfaces — Produces:** `Settings.openrouter_api_key: SecretStr | None`, `openrouter_base_url: str = "https://openrouter.ai/api/v1"`, `forgeops_model_supervisor = "anthropic/claude-sonnet-5"`, `forgeops_model_specialist = "anthropic/claude-haiku-4.5"`, `forgeops_model_rca = "anthropic/claude-sonnet-5"`, `knowledge_data_dir: str = "../.forgeops-data/knowledge"`, method `model_for(role: str) -> str`.
 
-- [ ] Add dependencies: `uv add openai langgraph langgraph-checkpoint-postgres "psycopg[binary]" psycopg-pool mcp chromadb rank-bm25` and `uv add --dev respx`.
+- [ ] Add dependencies: `uv add openai langgraph langgraph-checkpoint-postgres "psycopg[binary]" psycopg-pool mcp chromadb rank-bm25`.
 - [ ] Write `tests/test_config.py`:
 
 ```python
@@ -233,7 +233,7 @@ def test_parallel_lists_use_add_reducer():
 - `ask_structured(llm, *, purpose, model_role, system, messages, schema: type[T], tool_name, tool_description, check: Callable[[T], str | None] | None = None) -> T`.
 - Test helpers in `tests/engine/fakes.py`: `ScriptedLLM(script: dict[str, list[LLMReply | Callable[[LLMRequest], LLMReply]]])` — keyed by `request.purpose` (exact match first, then prefix match up to ":"), pops the next reply per key, records `requests`; raises `AssertionError` when a purpose has no replies left. Helper `call(name, **arguments) -> LLMReply` building a single tool call with id `call_<n>`.
 
-- [ ] Write `tests/engine/test_openrouter.py` (HTTP mocked with respx — test only):
+- [ ] Write `tests/engine/test_openrouter.py` (HTTP served by an in-memory `httpx2.MockTransport` passed to `AsyncOpenAI(http_client=...)`; the version below was superseded during implementation, see the committed test file):
 
 ```python
 import json
