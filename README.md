@@ -67,24 +67,44 @@ Forgeops/
 
 ## Local setup
 
-Requirements: Docker Desktop, [uv](https://docs.astral.sh/uv/), Node.js 20+.
+Requirements: [uv](https://docs.astral.sh/uv/), Node.js 20+, and a Supabase project for ForgeOps' own data. Docker is optional.
 
-```bash
-cd backend
-uv sync
-uv run python -m forgeops.devtools.envfile   # creates ../.env with generated secrets
-cd ..
-docker compose up -d --build                 # Postgres + API on http://localhost:8000
-cd frontend
-npm install
-npm run dev                                  # web app on http://localhost:5173
-```
+1. Create the config file:
+
+   ```bash
+   cd backend
+   uv sync
+   uv run python -m forgeops.devtools.envfile   # creates ../.env with generated secrets
+   ```
+
+2. In `.env`, set `DATABASE_URL` to your Supabase project's **Session pooler** connection string
+   (Supabase → Connect → Session pooler), with `postgresql://` changed to `postgresql+asyncpg://`
+   and special characters in the password URL-encoded (`@` → `%40`, `*` → `%2A`).
+   ForgeOps keeps its tables in the private `forgeops` schema, not in Supabase's public API schema.
+
+3. Create the tables and start the API:
+
+   ```bash
+   cd backend
+   uv run alembic upgrade head
+   uv run uvicorn forgeops.main:create_app --factory --reload --port 8000
+   ```
+
+4. Start the web app (new terminal):
+
+   ```bash
+   cd frontend
+   npm install
+   npm run dev                                  # http://localhost:5173
+   ```
 
 Sign in with `FORGEOPS_ADMIN_EMAIL` and `FORGEOPS_ADMIN_PASSWORD` from `.env`.
 
 Tests:
 
 ```bash
-cd backend && uv run pytest     # needs the Postgres container running
+cd backend && uv run pytest     # uses the same database, isolated in the forgeops_test schema
 cd frontend && npm test
 ```
+
+Optional local database instead of Supabase: leave `DATABASE_URL` empty when running the env generator, then `docker compose --profile local-db up -d postgres`.

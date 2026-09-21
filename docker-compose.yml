@@ -1,7 +1,12 @@
 name: forgeops
 
+# Docker is optional. By default ForgeOps uses the database in DATABASE_URL (Supabase).
+#   docker compose --profile local-db up -d postgres   -> local Postgres instead
+#   docker compose up -d --build api                   -> run the API in a container
+
 services:
   postgres:
+    profiles: ["local-db"]
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -11,7 +16,6 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -21,11 +25,6 @@ services:
   api:
     build: ./backend
     env_file: .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    depends_on:
-      postgres:
-        condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"
 

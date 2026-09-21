@@ -1,31 +1,48 @@
+import asyncio
 import os
 
 import pytest
 from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
 from sqlalchemy.pool import NullPool
 
 from forgeops.config import Settings
 from forgeops.db.models import Base
+from forgeops.db.session import create_engine, ensure_schema
 from forgeops.main import create_app, shutdown, startup
 
 ADMIN_EMAIL = "admin@test.local"
 ADMIN_PASSWORD = "correct horse battery"
+TEST_SCHEMA = "forgeops_test"
 
 
 def _test_database_url() -> str:
-    if url := os.environ.get("TEST_DATABASE_URL"):
-        return url
-    base = Settings().database_url  # repo-root .env
-    return make_url(base).set(database="forgeops_test").render_as_string(hide_password=False)
+    # Same database as development (repo-root .env), isolated in its own schema.
+    return os.environ.get("TEST_DATABASE_URL") or Settings().database_url
+
+
+async def _create_test_tables(url: str) -> None:
+    engine = create_engine(url, TEST_SCHEMA, poolclass=NullPool)
+    await ensure_schema(engine, TEST_SCHEMA)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    await engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def database_url() -> str:
+    url = _test_database_url()
+    asyncio.run(_create_test_tables(url))  # once per test run
+    return url
 
 
 @pytest.fixture
-def settings() -> Settings:
+def settings(database_url) -> Settings:
     return Settings(
-        database_url=_test_database_url(),
+        database_url=database_url,
+        database_schema=TEST_SCHEMA,
         forgeops_secret_key=Fernet.generate_key().decode(),
         forgeops_admin_email=ADMIN_EMAIL,
         forgeops_admin_password=ADMIN_PASSWORD,
@@ -35,10 +52,10 @@ def settings() -> Settings:
 
 @pytest.fixture
 async def app(settings):
-    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    engine = create_engine(settings.database_url, TEST_SCHEMA, poolclass=NullPool)
+    tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
     await engine.dispose()
 
     application = create_app(settings)

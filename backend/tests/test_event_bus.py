@@ -61,10 +61,10 @@ async def test_stream_replays_then_goes_live_then_stops_at_terminal(app, session
             received.append(event.type)
 
     task = asyncio.create_task(consume())
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(1)
     await bus.emit(ws, inv, EventIn(type=EventType.agent_started, agent="code"))
     await bus.emit(ws, inv, EventIn(type=EventType.investigation_completed))
-    await asyncio.wait_for(task, timeout=2)
+    await asyncio.wait_for(task, timeout=10)
     assert received == ["investigation_started", "agent_started", "investigation_completed"]
 
 
@@ -77,5 +77,5 @@ async def test_stream_of_finished_investigation_ends_immediately(app, session_fa
     async def drain(after: int) -> list[int]:
         return [e.seq async for e in bus.stream(inv, after_seq=after)]
 
-    assert await asyncio.wait_for(drain(0), timeout=2) == [1]
-    assert await asyncio.wait_for(drain(1), timeout=2) == []
+    assert await asyncio.wait_for(drain(0), timeout=10) == [1]
+    assert await asyncio.wait_for(drain(1), timeout=10) == []

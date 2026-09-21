@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     forgeops_env: str = "development"
     database_url: str
+    database_schema: str = "forgeops"
     forgeops_secret_key: SecretStr
     forgeops_admin_email: str
     forgeops_admin_password: SecretStr

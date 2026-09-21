@@ -19,7 +19,9 @@ log = structlog.get_logger()
 
 async def startup(app: FastAPI, settings: Settings) -> None:
     configure_logging(settings.is_production)
-    engine, session_factory = create_engine_and_factory(settings.database_url)
+    engine, session_factory = create_engine_and_factory(
+        settings.database_url, settings.database_schema
+    )
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = session_factory
