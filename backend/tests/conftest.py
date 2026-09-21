@@ -11,6 +11,7 @@ from forgeops.config import Settings
 from forgeops.db.models import Base
 from forgeops.db.session import create_engine, ensure_schema
 from forgeops.main import create_app, shutdown, startup
+from tests.engine.fakes import HashEmbedder
 
 ADMIN_EMAIL = "admin@test.local"
 ADMIN_PASSWORD = "correct horse battery"
@@ -39,7 +40,7 @@ def database_url() -> str:
 
 
 @pytest.fixture
-def settings(database_url) -> Settings:
+def settings(database_url, tmp_path_factory) -> Settings:
     return Settings(
         database_url=database_url,
         database_schema=TEST_SCHEMA,
@@ -47,6 +48,8 @@ def settings(database_url) -> Settings:
         forgeops_admin_email=ADMIN_EMAIL,
         forgeops_admin_password=ADMIN_PASSWORD,
         forgeops_workspace_name="Test workspace",
+        openrouter_api_key=None,
+        knowledge_data_dir=str(tmp_path_factory.mktemp("knowledge-index")),
     )
 
 
@@ -60,6 +63,7 @@ async def app(settings):
 
     application = create_app(settings)
     await startup(application, settings)
+    application.state.embedder = HashEmbedder()  # never download a model in tests
     yield application
     await shutdown(application)
 

@@ -5,10 +5,11 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from forgeops.api import auth, health, investigations
+from forgeops.api import auth, connections, health, investigations
 from forgeops.config import Settings, get_settings
 from forgeops.db.session import create_engine_and_factory
 from forgeops.events.bus import EventBus
+from forgeops.knowledge.index import default_embedder
 from forgeops.logging import configure_logging
 from forgeops.security.crypto import SecretBox
 from forgeops.security.rate_limit import LoginLimiter
@@ -28,6 +29,7 @@ async def startup(app: FastAPI, settings: Settings) -> None:
     app.state.event_bus = EventBus(session_factory)
     app.state.login_limiter = LoginLimiter()
     app.state.secret_box = SecretBox(settings.forgeops_secret_key.get_secret_value())
+    app.state.embedder = default_embedder()  # model downloads on first use
     async with session_factory() as session:
         _, workspace = await ensure_admin(session, settings)
     log.info("forgeops.started", workspace_id=workspace.id, env=settings.forgeops_env)
@@ -57,4 +59,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
     app.include_router(investigations.router, prefix="/api")
+    app.include_router(connections.router, prefix="/api")
     return app
