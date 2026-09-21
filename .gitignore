@@ -23,3 +23,6 @@ Thumbs.db
 
 # local data
 .forgeops-data/
+
+# design tool runtime files
+.impeccable/questions/

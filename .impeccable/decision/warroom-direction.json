@@ -1,0 +1,112 @@
+{
+  "title": "ForgeOps War Room: choose the visual world",
+  "question": "The roll assigned the Transit Map Office. Keep it, take Impeccable's pick, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Transit Map Office",
+      "kicker": "THE ROLL",
+      "lineage": "1970s modernist subway diagrams, drawn as an office floor plan",
+      "thesis": "The office is a network map: desks are stations, each agent owns a route color, and a question travels the line to a colleague's station.",
+      "palette": ["#FFFFFF", "#141414", "#E4312B", "#0B57C4", "#12925A", "#F5B700"],
+      "materials": ["flat enamel route color", "white map ground", "station dots and name plates", "strict 45/90 degree lines"],
+      "viewport": "The whole floor as one map: seven desk-stations on colored lines, an interchange evidence wall at the center, the RCA terminus, and the chat bar docked right asking \"What's broken?\".",
+      "risk": "Can read as a diagram rather than an office if the desks and figures are drawn too abstractly.",
+      "raised": [
+        {"from": "challenger-elbow-panel", "raise": "Route colors are flat, fully committed fields with no gradients or glow; every state change is an instant color swap."},
+        {"from": "challenger-tensegrity", "raise": "Evidence cards hang on leader lines from the stations that found them; supporting and contradicting links are drawn as distinct line styles."},
+        {"from": "challenger-nixie", "raise": "One warm value is reserved for the live incident clock; nothing else on the floor uses it."},
+        {"from": "challenger-cdrom", "raise": "The map is a fixed stage that never reflows; chat, evidence detail and approval change around it."},
+        {"from": "challenger-datamatics", "raise": "Timestamps, durations and tool calls set in one tight tabular monospace column in the live feed."}
+      ]
+    },
+    {
+      "id": "model-pick",
+      "label": "Mission Control Floor",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "1960s flight control rooms: flight director plus specialist console rows",
+      "thesis": "A flight director and rows of specialist consoles on shared voice loops; agents talk on loops and the big front screen carries the plan.",
+      "palette": ["#1E2226", "#C9CDD2", "#F2A900", "#5FB0E0", "#E5484D"],
+      "materials": ["console gray enamel", "backlit push buttons", "front projection screen", "loop indicator lamps"],
+      "viewport": "Tiered console rows facing a front screen with the incident and plan; the director console at the back, chat as the loop panel.",
+      "risk": "Familiar: control-room metaphors are where most incident tools land, and it pulls toward a dark cockpit look."
+    },
+    {
+      "id": "challenger-elbow-panel",
+      "label": "Starship Elbow Panel",
+      "verdict": "declined",
+      "lineage": "pill-cornered starship wall panels",
+      "thesis": "Every desk as a pastel pill bank inside sweeping elbow frames.",
+      "palette": ["#000000", "#C9A0DC", "#FFB38A", "#F5C542", "#8FA7FF"],
+      "materials": ["flat pastel blocks", "black glass"],
+      "viewport": "Elbow frames sweeping around desk banks.",
+      "risk": "Reads as sci-fi costume, the game-like feel you ruled out.",
+      "case": "Fuses poorly: founders do not identify an incident with a starship set.",
+      "kept": "Flat, fully committed color with instant state swaps."
+    },
+    {
+      "id": "challenger-tensegrity",
+      "label": "Tensegrity Force Diagram",
+      "verdict": "declined",
+      "lineage": "kinetic tension sculpture and force diagrams",
+      "thesis": "Evidence as a network of tension and counterforce.",
+      "palette": ["#E6E4DF", "#1C1C1C", "#C8322A", "#9A9A9A"],
+      "materials": ["carbon rods", "red cord", "leader-line annotation"],
+      "viewport": "A strut network with findings pinned to nodes.",
+      "risk": "Abstract; the office and its people disappear.",
+      "case": "Fuses partly: support versus contradiction maps well, the office does not.",
+      "kept": "Findings pinned on leader lines; support and contradiction as distinct line states."
+    },
+    {
+      "id": "challenger-nixie",
+      "label": "Nixie Laboratory Counter",
+      "verdict": "declined",
+      "lineage": "glass nixie tube counters",
+      "thesis": "Every count as glowing digits in glass.",
+      "palette": ["#141414", "#FF7A1A", "#6B6B6B"],
+      "materials": ["glass envelopes", "blackened steel"],
+      "viewport": "Tube banks for elapsed time and counts.",
+      "risk": "Carries numbers, not collaboration.",
+      "case": "Fuses poorly: nothing to say about desks talking to each other.",
+      "kept": "A single warm accent reserved for the one live value."
+    },
+    {
+      "id": "challenger-cdrom",
+      "label": "CD-ROM Console",
+      "verdict": "declined",
+      "lineage": "mid-nineties rendered multimedia consoles",
+      "thesis": "A fixed machine frame with content changing in a window.",
+      "palette": ["#9AA3AA", "#1F8A8A", "#6B4FA0"],
+      "materials": ["brushed bevels", "embossed toggles"],
+      "viewport": "A console framing a small live window.",
+      "risk": "Nostalgic chrome; clarity suffers.",
+      "case": "Fuses poorly: bevels add noise during an incident.",
+      "kept": "A fixed stage that never reflows."
+    },
+    {
+      "id": "challenger-datamatics",
+      "label": "Datamatics Field",
+      "verdict": "declined",
+      "lineage": "black-and-white data art",
+      "thesis": "Barcode fields and monospace numerics in pure black and white.",
+      "palette": ["#000000", "#FFFFFF"],
+      "materials": ["hairline bars", "monospace columns"],
+      "viewport": "A data wall of the investigation's numbers.",
+      "risk": "Strobing and abstraction work against calm.",
+      "case": "Fuses poorly: agents and their conversation vanish.",
+      "kept": "One tight tabular monospace column for times and calls."
+    }
+  ],
+  "reroll": {"registers": ["safer", "bolder"]},
+  "buildPath": {"value": "code", "toggle": false},
+  "canon": true,
+  "canonCard": {
+    "label": "Incident dashboard standard",
+    "thesis": "Timeline, agent status cards and an evidence list, executed at full craft.",
+    "palette": ["#FFFFFF", "#111827", "#2563EB", "#E5E7EB"],
+    "materials": ["card grid", "status pills", "timeline rail"],
+    "viewport": "Status cards per agent above a live timeline, chat on the right.",
+    "risk": "Looks like every incident tool; the office idea is lost."
+  },
+  "steer": true
+}
