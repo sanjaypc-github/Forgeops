@@ -15,6 +15,14 @@ dependencies = [
     "cryptography>=50",
     "sse-starlette>=3.4",
     "structlog>=26.1",
+    "openai>=3.16.2",
+    "langgraph>=1.2.12",
+    "langgraph-checkpoint-postgres>=3.1.2",
+    "psycopg[binary]>=3.3.6",
+    "psycopg-pool>=3.3.2",
+    "mcp>=2.2.0",
+    "chromadb>=1.5.9",
+    "rank-bm25>=0.2.2",
 ]
 
 [dependency-groups]
@@ -22,6 +30,7 @@ dev = [
     "pytest>=9.1",
     "pytest-asyncio>=1.4",
     "httpx>=0.28",
+    "respx>=0.23.1",
 ]
 
 [build-system]
