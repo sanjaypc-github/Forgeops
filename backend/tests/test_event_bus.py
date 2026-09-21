@@ -79,3 +79,16 @@ async def test_stream_of_finished_investigation_ends_immediately(app, session_fa
 
     assert await asyncio.wait_for(drain(0), timeout=10) == [1]
     assert await asyncio.wait_for(drain(1), timeout=10) == []
+
+
+async def test_replay_includes_messages_added_after_the_end(app, session_factory):
+    bus = app.state.event_bus
+    ws = await _workspace_id(session_factory)
+    inv = await _investigation(session_factory, ws)
+    await bus.emit(ws, inv, EventIn(type=EventType.investigation_completed))
+    await bus.emit(ws, inv, EventIn(type=EventType.chat_message, data={"role": "user", "text": "why?"}))
+
+    async def drain(after: int) -> list[str]:
+        return [e.type async for e in bus.stream(inv, after_seq=after)]
+
+    assert await asyncio.wait_for(drain(0), timeout=10) == ["investigation_completed", "chat_message"]

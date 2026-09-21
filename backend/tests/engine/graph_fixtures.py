@@ -52,7 +52,7 @@ def script():
     }
 
 
-async def make_deps(script_map, with_write=True):
+def fake_connectors(with_write=True):
     gh_tools = [spec("github.list_commits", Capability.code)]
     if with_write:
         gh_tools.append(spec("github.create_issue", Capability.write, "write"))
@@ -62,6 +62,11 @@ async def make_deps(script_map, with_write=True):
     kv = FakeConnector("con_knowledge", "knowledge",
                        [spec("knowledge.search", Capability.knowledge, ctype="knowledge")],
                        {"knowledge.search": ToolResult(ok=True, content="runbook: pool >= 20")})
+    return gh, kv
+
+
+async def make_deps(script_map, with_write=True):
+    gh, kv = fake_connectors(with_write)
     registry = await CapabilityRegistry.build([gh, kv])
     events, emit = collect_events()
     llm = ScriptedLLM(script_map)

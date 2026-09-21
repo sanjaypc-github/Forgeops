@@ -91,12 +91,14 @@ class EventBus:
         # duplicates are dropped by sequence number.
         async with self.subscribe(investigation_id) as queue:
             last = after_seq
+            finished = False
+            # Replay everything stored, including messages added after the investigation ended
+            # (follow-up chat), then stop if it has ended.
             for event in await self.history(investigation_id, after_seq):
                 yield event
                 last = event.seq
-                if event.type in TERMINAL_EVENTS:
-                    return
-            if await self.is_terminal(investigation_id):
+                finished = finished or event.type in TERMINAL_EVENTS
+            if finished or await self.is_terminal(investigation_id):
                 return
             while True:
                 event = await queue.get()

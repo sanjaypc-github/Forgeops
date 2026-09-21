@@ -1,7 +1,17 @@
 import json
 
+import pytest
+
 from forgeops.db.models import Investigation, Workspace
 from forgeops.events.models import EventIn, EventType
+
+
+@pytest.fixture(autouse=True)
+def idle_engine(app):
+    """These tests cover the API and event stream only; the engine is tested elsewhere."""
+    async def start(investigation_id):
+        return None
+    app.state.runner.start = start
 
 
 async def test_create_requires_csrf(auth_client):
@@ -17,7 +27,7 @@ async def test_create_and_get(auth_client, app):
     assert response.status_code == 201
     body = response.json()
     assert body["id"].startswith("inv_")
-    assert body["status"] == "queued"
+    assert body["status"] == "running"
     assert body["source"] == "web"
 
     fetched = await auth_client.get(f"/api/investigations/{body['id']}")

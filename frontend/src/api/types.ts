@@ -21,7 +21,8 @@ export interface Investigation {
 export type EventType =
   | "investigation_started" | "supervisor_started" | "plan_created" | "agent_skipped"
   | "agent_started" | "tool_called" | "tool_completed" | "evidence_added" | "agent_failed"
-  | "agent_completed" | "review_completed" | "rca_started" | "rca_completed"
+  | "agent_completed" | "agent_question" | "agent_answer" | "agent_question_failed" | "chat_message"
+  | "review_completed" | "rca_started" | "rca_completed"
   | "approval_requested" | "approval_granted" | "approval_rejected" | "action_started"
   | "action_completed" | "report_ready" | "investigation_completed" | "investigation_failed";
 
