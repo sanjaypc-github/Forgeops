@@ -26,7 +26,7 @@ VAULT = Path(__file__).resolve().parents[3] / "knowledge-vault"
 
 def _line(event) -> str:
     data = event.data
-    detail = (data.get("summary") or data.get("objective") or data.get("finding") or data.get("question")
+    detail = (data.get("error") or data.get("summary") or data.get("objective") or data.get("finding") or data.get("question")
               or data.get("answer") or data.get("reason") or data.get("text") or data.get("tool") or "")
     if event.type == EventType.plan_created:
         detail = f"{data['summary']} | tasks: " + ", ".join(t["agent"] for t in data["tasks"])

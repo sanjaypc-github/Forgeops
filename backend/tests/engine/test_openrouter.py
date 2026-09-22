@@ -77,3 +77,35 @@ def test_missing_key_is_a_clear_error():
                      forgeops_admin_email="a@b.c", forgeops_admin_password="x", openrouter_api_key=key)
         with pytest.raises(LLMNotConfigured, match="OPENROUTER_API_KEY"):
             OpenRouterLLM.from_settings(s)
+
+
+async def test_empty_answers_are_retried_then_reported_with_the_provider_message():
+    responses = [
+        {"id": "g", "object": "chat.completion", "created": 0, "model": "m", "choices": []},
+        {"id": "g", "object": "chat.completion", "created": 0, "model": "m", "choices": [],
+         "error": {"message": "Provider overloaded", "code": 502}},
+        _completion({"role": "assistant", "content": "finally"}),
+    ]
+
+    def handler(request):
+        return httpx2.Response(200, json=responses.pop(0))
+
+    client = AsyncOpenAI(api_key="k", base_url=BASE,
+                         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
+    llm = OpenRouterLLM(api_key="k", models=MODELS, base_url=BASE, client=client, retry_delay=0)
+    reply = await llm.complete(LLMRequest(purpose="rca", model_role="rca", system="S", messages=[]))
+    assert reply.text == "finally" and responses == []
+
+
+async def test_persistent_empty_answers_fail_with_the_reason():
+    from forgeops.engine.llm.base import LLMError
+
+    def handler(request):
+        return httpx2.Response(200, json={"id": "g", "object": "chat.completion", "created": 0, "model": "m",
+                                          "choices": [], "error": {"message": "Rate limit exceeded: free tier"}})
+
+    client = AsyncOpenAI(api_key="k", base_url=BASE,
+                         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
+    llm = OpenRouterLLM(api_key="k", models=MODELS, base_url=BASE, client=client, retry_delay=0)
+    with pytest.raises(LLMError, match="Rate limit exceeded: free tier"):
+        await llm.complete(LLMRequest(purpose="rca", model_role="rca", system="S", messages=[]))

@@ -53,6 +53,7 @@ async def startup(app: FastAPI, settings: Settings) -> None:
         session_factory=session_factory, bus=state.event_bus, checkpointer=state.checkpointer,
         llm_factory=lambda: state.llm_factory(),
         registry_factory=lambda workspace_id: state.registry_factory(workspace_id),
+        budgets=settings.budgets(),
     )
     recovered = await state.runner.recover_on_startup()
     log.info("forgeops.started", workspace_id=workspace.id, env=settings.forgeops_env,

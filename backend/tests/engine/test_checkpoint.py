@@ -41,3 +41,20 @@ async def test_approval_pause_survives_a_restart(settings, session_factory):
             "select distinct table_schema from information_schema.tables where table_name = 'checkpoints'"
         ))).scalars().all()
     assert TEST_SCHEMA in schemas and "public" not in schemas
+
+
+def test_checkpoint_serializer_allows_only_forgeops_state_types():
+    from forgeops.engine.checkpoint import checkpoint_serde
+    from forgeops.engine.models import AgentId, Capability, Evidence
+
+    serde = checkpoint_serde()
+    ev = Evidence(id="ev_1", agent=AgentId.code, capability=Capability.code, connection_id="c", connector_type="github",
+                  finding="f", severity="high", confidence=0.5, tool_call_ids=["tc_1"])
+    assert serde.loads_typed(serde.dumps_typed(ev)) == ev
+
+    class Stranger:  # not on the allowlist
+        pass
+
+    import pytest
+    with pytest.raises(Exception):
+        serde.loads_typed(serde.dumps_typed(Stranger()))

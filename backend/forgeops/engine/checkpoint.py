@@ -5,9 +5,22 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.engine import make_url
 
-from forgeops.config import Settings
-
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+from forgeops.config import Settings
+from forgeops.engine import models
+
+# Only ForgeOps' own state types may be loaded from a checkpoint (plus LangGraph's safe built-ins).
+STATE_TYPES = (
+    models.AgentId, models.Capability, models.Incident, models.AgentTask, models.SkippedAgent, models.Plan,
+    models.Artifact, models.ToolCallRecord, models.Evidence, models.AgentQuestion, models.AgentError,
+    models.TimelineItem, models.Recommendation, models.RCA, models.Decision, models.ActionResult,
+)
+
+
+def checkpoint_serde() -> JsonPlusSerializer:
+    return JsonPlusSerializer(allowed_msgpack_modules=STATE_TYPES)
 
 
 def psycopg_conninfo(database_url: str) -> str:
@@ -28,6 +41,6 @@ async def open_checkpointer(settings: Settings) -> tuple[AsyncPostgresSaver, Asy
         kwargs={"autocommit": True, "prepare_threshold": None, "row_factory": dict_row},
     )
     await pool.open()
-    saver = AsyncPostgresSaver(pool)
+    saver = AsyncPostgresSaver(pool, serde=checkpoint_serde())
     await saver.setup()
     return saver, pool

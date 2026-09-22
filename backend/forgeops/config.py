@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     forgeops_model_specialist: str = "anthropic/claude-haiku-4.5"
     forgeops_model_rca: str = "anthropic/claude-sonnet-5"
 
+    # Time budgets in seconds (raise them for slow or free models)
+    forgeops_specialist_seconds: float = 300
+    forgeops_answer_seconds: float = 90
+    forgeops_run_seconds: float = 1800
+
     # Knowledge vault search index location
     knowledge_data_dir: str = "../.forgeops-data/knowledge"
     # Operator-controlled folders that knowledge vaults must live inside (JSON list in .env).
@@ -37,6 +42,12 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.forgeops_env == "production"
+
+    def budgets(self):
+        from forgeops.engine.budgets import Budgets
+
+        return Budgets(specialist_seconds=self.forgeops_specialist_seconds,
+                       answer_seconds=self.forgeops_answer_seconds, run_seconds=self.forgeops_run_seconds)
 
     def model_for(self, role: str) -> str:
         if role not in MODEL_ROLES:

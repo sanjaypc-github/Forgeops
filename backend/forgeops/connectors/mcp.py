@@ -7,6 +7,7 @@ action calls one.
 
 import asyncio
 import os
+import shutil
 from contextlib import AsyncExitStack
 from typing import Any, Literal
 
@@ -115,7 +116,9 @@ class McpConnector:
         command = [self._fill(part) for part in self.definition.command]
         env = {k: os.environ[k] for k in _PASSTHROUGH_ENV if k in os.environ}
         env.update({k: self._fill(v) for k, v in self.definition.env.items()})
-        return StdioServerParameters(command=command[0], args=command[1:], env=env)
+        # On Windows "npx" is npx.cmd, which subprocesses only find by its full name.
+        executable = shutil.which(command[0]) or command[0]
+        return StdioServerParameters(command=executable, args=command[1:], env=env)
 
     def _transport(self, mode: Mode):
         definition = self.definition

@@ -1,5 +1,6 @@
 """OpenRouter chat completions through the OpenAI SDK (OpenAI-compatible API)."""
 
+import asyncio
 import json
 from collections.abc import Mapping
 from typing import Any
@@ -11,6 +12,9 @@ from forgeops.config import MODEL_ROLES, Settings
 from forgeops.engine.llm.base import (
     LLMError, LLMNotConfigured, LLMReply, LLMRequest, Message, ToolCall,
 )
+
+
+EMPTY_ANSWER_ATTEMPTS = 3
 
 
 def _to_openai(message: Message) -> dict[str, Any]:
@@ -52,10 +56,12 @@ class OpenRouterLLM:
         api_key: str,
         models: Mapping[str, str],
         base_url: str,
-        timeout: float = 90,
+        timeout: float = 120,
         client: AsyncOpenAI | None = None,
+        retry_delay: float = 2.0,
     ) -> None:
         self._models = dict(models)
+        self._retry_delay = retry_delay
         self._client = client or AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -89,13 +95,23 @@ class OpenRouterLLM:
                 for t in request.tools
             ]
             params["tool_choice"] = _tool_choice(request.tool_choice)
-        try:
-            response = await self._client.chat.completions.create(**params)
-        except openai.APIError as exc:
-            raise LLMError(f"OpenRouter request failed ({type(exc).__name__}): {exc.message}") from exc
-
-        if not response.choices:
-            raise LLMError("OpenRouter returned no choices")
+        response = None
+        problem = ""
+        # Busy (especially free) providers sometimes answer with no choices; retry those briefly.
+        for attempt in range(EMPTY_ANSWER_ATTEMPTS):
+            try:
+                response = await self._client.chat.completions.create(**params)
+            except openai.APIError as exc:
+                raise LLMError(f"OpenRouter request failed ({type(exc).__name__}): {exc.message}") from exc
+            if response.choices:
+                break
+            error = (getattr(response, "model_extra", None) or {}).get("error") or {}
+            problem = str(error.get("message", "")) if isinstance(error, dict) else str(error)
+            if attempt + 1 < EMPTY_ANSWER_ATTEMPTS:
+                await asyncio.sleep(self._retry_delay * (attempt + 1))
+        if response is None or not response.choices:
+            raise LLMError("OpenRouter returned no answer" + (f": {problem}" if problem else
+                           " (the model provider may be overloaded; try again or use another model)"))
         message = response.choices[0].message
         usage = response.usage
         return LLMReply(
