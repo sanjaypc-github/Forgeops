@@ -14,7 +14,8 @@ class ConfigField(BaseModel):
     required: bool = True
     help: str = ""
     placeholder: str = ""
-    boolean: bool = False  # shown as a checkbox; stored as "true"/"false"
+    boolean: bool = False  # shown as a checkbox; stored as true/false
+    pattern: str | None = None  # full-match regex the value must satisfy
 
 
 class ToolMapping(BaseModel):
@@ -46,6 +47,8 @@ class ConnectorDefinition(BaseModel):
     docs_url: str | None = None
     setup_steps: list[str] = Field(default_factory=list)  # shown on the connect form
     supports_writes: bool = False
+    # One line for the Supervisor's service map, e.g. "GitHub repository {repository}".
+    context: str = ""
 
 
 KNOWLEDGE = ConnectorDefinition(
@@ -60,6 +63,7 @@ KNOWLEDGE = ConnectorDefinition(
         help="Absolute path to the Obsidian vault or Markdown folder on the ForgeOps server.",
         placeholder="/srv/forgeops/knowledge-vault",
     )],
+    context="Knowledge vault: the team's runbooks, architecture notes and postmortems",
     setup_steps=["The folder must be inside a KNOWLEDGE_VAULT_ROOTS folder on the ForgeOps server."],
 )
 
@@ -86,9 +90,10 @@ GITHUB = ConnectorDefinition(
     },
     write_headers={"Authorization": "Bearer {token}", "X-MCP-Toolsets": "issues"},
     supports_writes=True,
+    context="GitHub repository {repository}: source code, pull requests, issues, releases, Actions CI/deploys",
     docs_url="https://github.com/github/github-mcp-server",
     config_fields=[
-        ConfigField(key="repository", label="Repository", placeholder="owner/repo",
+        ConfigField(key="repository", label="Repository", placeholder="owner/repo", pattern=r"[\w.-]+/[\w.-]+",
                     help="The repository ForgeOps investigates."),
         ConfigField(key="token", label="Personal access token", secret=True, placeholder="github_pat_…",
                     help="A fine-grained token limited to this repository."),
@@ -141,9 +146,10 @@ SUPABASE = ConnectorDefinition(
     transport="stdio",
     command=["npx", "-y", "@supabase/mcp-server-supabase@0.13.0", "--read-only", "--project-ref={project_ref}"],
     env={"SUPABASE_ACCESS_TOKEN": "{access_token}"},
+    context="Supabase project {project_ref}: Postgres database, edge functions, API/auth/storage logs",
     docs_url="https://supabase.com/docs/guides/getting-started/mcp",
     config_fields=[
-        ConfigField(key="project_ref", label="Project ref", placeholder="abcdefghijklmnopqrst",
+        ConfigField(key="project_ref", label="Project ref", placeholder="abcdefghijklmnopqrst", pattern=r"[a-z0-9]{20}",
                     help="Project Settings → General → Project ID."),
         ConfigField(key="access_token", label="Access token", secret=True, placeholder="sbp_…",
                     help="A personal access token. ForgeOps runs the server in read-only mode for one project."),

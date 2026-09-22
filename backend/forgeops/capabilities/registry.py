@@ -17,6 +17,7 @@ class CapabilityRegistry:
         self._tools = {t.name: t for t in tools}
         self._owner = {t.name: c for c in connectors for t in tools if t.connection_id == c.connection_id}
         self.warnings = warnings
+        self.service_map = ""  # what the connections point at, for the Supervisor's plan
 
     @classmethod
     async def build(cls, connectors: list[Connector], warnings: list[str] | None = None) -> "CapabilityRegistry":

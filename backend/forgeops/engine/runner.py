@@ -94,7 +94,7 @@ class InvestigationRunner:
                 return await self._user_notes(inv.id)
 
             deps = RunDeps(llm=llm, registry=registry, tool_runner=ToolRunner(registry, emit, self._budgets),
-                           emit=emit, budgets=self._budgets, now=self._now, service_map="", notes=notes)
+                           emit=emit, budgets=self._budgets, now=self._now, service_map=registry.service_map, notes=notes)
             graph = build_graph(deps, self._checkpointer)
             config = self._config(inv.id)
             async with asyncio.timeout(self._budgets.run_seconds):

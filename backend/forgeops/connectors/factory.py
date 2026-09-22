@@ -16,6 +16,18 @@ from forgeops.knowledge.index import EmbedFn, KnowledgeIndex
 from forgeops.security.crypto import SecretBox
 
 
+def describe_connection(row: Connection) -> str:
+    """The definition's context line with the connection's (non-secret) values, e.g. the repository."""
+    definition = CATALOG.get(row.type)
+    if definition is None or not definition.context:
+        return ""
+    try:
+        line = definition.context.format_map({k: str(v) for k, v in row.config.items()})
+    except (KeyError, ValueError):
+        line = definition.display_name
+    return f"- {line} (connection \"{row.name}\")"
+
+
 def build_connector(row: Connection, secret_box: SecretBox, settings: Settings, embed: EmbedFn) -> Connector:
     definition = CATALOG.get(row.type)
     if definition is None:
@@ -45,9 +57,13 @@ async def build_registry_for_workspace(
         ))
     connectors: list[Connector] = []
     warnings: list[str] = []
+    lines: list[str] = []
     for row in rows:
         try:
             connectors.append(build_connector(row, secret_box, settings, embed))
+            lines.append(describe_connection(row))
         except Exception as exc:  # noqa: BLE001 - one bad connection must not block the others
             warnings.append(f"{row.type} ({row.id}) unavailable: {exc}")
-    return await CapabilityRegistry.build(connectors, warnings)
+    registry = await CapabilityRegistry.build(connectors, warnings)
+    registry.service_map = "\n".join(line for line in lines if line)
+    return registry
