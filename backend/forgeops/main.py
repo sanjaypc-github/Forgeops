@@ -6,7 +6,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from forgeops.api import auth, chat, connections, health, investigations
+from forgeops.api import agents, auth, chat, connections, health, investigations
 from forgeops.config import Settings, get_settings
 from forgeops.connectors.factory import build_registry_for_workspace
 from forgeops.db.session import create_engine_and_factory
@@ -86,6 +86,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for module in (health, auth, investigations, chat, connections):
+    for module in (health, auth, investigations, chat, connections, agents):
         app.include_router(module.router, prefix="/api")
     return app
