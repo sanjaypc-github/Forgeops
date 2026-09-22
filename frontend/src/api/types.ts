@@ -34,3 +34,17 @@ export interface InvestigationEvent {
   ts: string;
   data: Record<string, unknown>;
 }
+
+export type AgentId =
+  | "supervisor" | "code" | "frontend_hosting" | "backend_services" | "database"
+  | "observability" | "knowledge" | "rca" | "action";
+
+export interface Desk {
+  id: AgentId;
+  title: string;
+  area: string;
+  specialist: boolean;
+  connected: boolean;
+  capabilities: string[];
+  connectors: { id: string; type: string; name: string }[];
+}
