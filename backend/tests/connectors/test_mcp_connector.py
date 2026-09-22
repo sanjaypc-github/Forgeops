@@ -63,7 +63,7 @@ async def test_health_check_reports_tool_count():
     conn = _connector()
     try:
         health = await conn.health_check()
-        assert health.ok and "3 tools" in health.detail
+        assert health.ok and "3 read tools available" in health.detail
     finally:
         await conn.aclose()
 
@@ -82,5 +82,117 @@ async def test_missing_command_is_a_clear_health_failure():
     try:
         health = await conn.health_check()
         assert not health.ok and health.detail
+    finally:
+        await conn.aclose()
+
+
+# ─── M3: defaults, fixed arguments, writes, health, HTTP ─────────────────────────────────────────
+import json
+import socket
+import subprocess
+import time
+
+import pytest
+
+
+def _echo_definition(**extra):
+    return ConnectorDefinition(**({
+        "type": "testgit", "display_name": "Test Git", "description": "test", "agents": [AgentId.code],
+        "status": "available", "transport": "stdio", "command": [sys.executable, str(SERVER)],
+        "env": {"TEST_TOKEN": "{token}"},
+        "config_fields": [ConfigField(key="repository", label="Repository"),
+                          ConfigField(key="token", label="Token", secret=True)],
+        "tools": [
+            ToolMapping(upstream="echo_args", name="testgit.echo", capability=Capability.code, permission="read",
+                        defaults={"owner": "{owner}", "repo": "{repo}"}),
+            ToolMapping(upstream="echo_args", name="testgit.create_issue", capability=Capability.write,
+                        permission="write", defaults={"owner": "{owner}", "repo": "{repo}"},
+                        fixed={"method": "create"}),
+            ToolMapping(upstream="does_not_exist", name="testgit.missing", capability=Capability.code,
+                        permission="read"),
+        ],
+    } | extra))
+
+
+async def test_connection_defaults_are_filled_and_fixed_arguments_win():
+    conn = McpConnector(_echo_definition(), "con_t", config={"repository": "acme/shop", "allow_writes": True},
+                        secrets={"token": "t0k"})
+    try:
+        read = json.loads((await conn.call("testgit.echo", {"title": "x"})).content)
+        assert read == {"owner": "acme", "repo": "shop", "method": "", "title": "x"}
+        override = json.loads((await conn.call("testgit.echo", {"owner": "other"})).content)
+        assert override["owner"] == "other"  # defaults can be overridden by the agent
+        write = json.loads((await conn.call("testgit.create_issue", {"title": "Bug", "method": "delete"})).content)
+        assert write == {"owner": "acme", "repo": "shop", "method": "create", "title": "Bug"}  # fixed wins
+    finally:
+        await conn.aclose()
+
+
+async def test_write_tools_only_exist_when_the_connection_allows_writes():
+    read_only = McpConnector(_echo_definition(), "con_t", config={"repository": "acme/shop"}, secrets={"token": "t0k"})
+    writable = McpConnector(_echo_definition(), "con_t", config={"repository": "acme/shop", "allow_writes": True},
+                            secrets={"token": "t0k"})
+    try:
+        assert "testgit.create_issue" not in {t.name for t in await read_only.list_tools()}
+        refused = await read_only.call("testgit.create_issue", {"title": "x"})
+        assert not refused.ok and "writes are not enabled" in refused.error
+        tools = {t.name: t for t in await writable.list_tools()}
+        assert tools["testgit.create_issue"].permission == "write"
+        assert tools["testgit.create_issue"].capability == Capability.write
+    finally:
+        await read_only.aclose()
+        await writable.aclose()
+
+
+async def test_health_check_reports_allowlisted_tools_the_server_lacks():
+    conn = McpConnector(_echo_definition(), "con_t", config={"repository": "acme/shop"}, secrets={"token": "t0k"})
+    try:
+        health = await conn.health_check()
+        assert health.ok and "testgit.missing" in health.detail
+    finally:
+        await conn.aclose()
+
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture
+def http_server():
+    port = _free_port()
+    proc = subprocess.Popen([sys.executable, str(SERVER), "--http", str(port)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    deadline = time.time() + 20
+    while time.time() < deadline:
+        with socket.socket() as s:
+            if s.connect_ex(("127.0.0.1", port)) == 0:
+                break
+        time.sleep(0.2)
+    yield f"http://127.0.0.1:{port}/mcp"
+    proc.terminate()
+    proc.wait(timeout=10)
+
+
+async def test_http_transport_sends_auth_and_read_only_headers(http_server):
+    definition = ConnectorDefinition(
+        type="testhttp", display_name="Test HTTP", description="test", agents=[AgentId.code],
+        status="available", transport="http", url=http_server,
+        headers={"Authorization": "Bearer {token}", "X-MCP-Readonly": "true"},
+        write_headers={"Authorization": "Bearer {token}"},
+        config_fields=[ConfigField(key="token", label="Token", secret=True)],
+        tools=[ToolMapping(upstream="request_headers", name="testhttp.headers", capability=Capability.code,
+                           permission="read"),
+               ToolMapping(upstream="request_headers", name="testhttp.headers_write",
+                           capability=Capability.write, permission="write")],
+    )
+    conn = McpConnector(definition, "con_h", config={"allow_writes": True}, secrets={"token": "t0k"})
+    try:
+        assert [t.name for t in await conn.list_tools() if t.permission == "read"] == ["testhttp.headers"]
+        read = json.loads((await conn.call("testhttp.headers", {})).content)
+        assert read == {"auth": True, "readonly": "true"}
+        write = json.loads((await conn.call("testhttp.headers_write", {})).content)
+        assert write == {"auth": True, "readonly": None}  # the write session is a separate, non-read-only session
     finally:
         await conn.aclose()

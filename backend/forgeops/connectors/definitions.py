@@ -1,6 +1,6 @@
 """The connector catalog: what each connector is, how it connects, and which tools it may expose."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,11 @@ class ToolMapping(BaseModel):
     name: str  # ForgeOps name given to agents
     capability: Capability
     permission: Literal["read", "write"]
+    description: str | None = None  # overrides the server's description when set
+    # Filled from the connection (e.g. {"owner": "{owner}"}) unless the agent passes a value.
+    defaults: dict[str, str] = Field(default_factory=dict)
+    # Always applied, whatever the model sends (e.g. {"method": "create"}).
+    fixed: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConnectorDefinition(BaseModel):
@@ -31,10 +36,14 @@ class ConnectorDefinition(BaseModel):
     transport: Literal["native", "stdio", "http"]
     command: list[str] = Field(default_factory=list)  # stdio; may contain {config_key}
     env: dict[str, str] = Field(default_factory=dict)  # stdio; values may contain {config_key}
-    url: str | None = None  # http
+    url: str | None = None  # http; may contain {config_key}
+    headers: dict[str, str] = Field(default_factory=dict)  # http read session; values may contain {config_key}
+    write_headers: dict[str, str] = Field(default_factory=dict)  # http write session (approved actions only)
     config_fields: list[ConfigField] = Field(default_factory=list)
     tools: list[ToolMapping] = Field(default_factory=list)  # allowlist
     docs_url: str | None = None
+    setup_steps: list[str] = Field(default_factory=list)  # shown on the connect form
+    supports_writes: bool = False
 
 
 KNOWLEDGE = ConnectorDefinition(
