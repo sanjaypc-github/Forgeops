@@ -1,6 +1,12 @@
 import asyncio
+import json
+import socket
+import subprocess
 import sys
+import time
 from pathlib import Path
+
+import pytest
 
 from forgeops.connectors.definitions import ConfigField, ConnectorDefinition, ToolMapping
 from forgeops.connectors.mcp import McpConnector
@@ -87,12 +93,6 @@ async def test_missing_command_is_a_clear_health_failure():
 
 
 # ─── M3: defaults, fixed arguments, writes, health, HTTP ─────────────────────────────────────────
-import json
-import socket
-import subprocess
-import time
-
-import pytest
 
 
 def _echo_definition(**extra):
