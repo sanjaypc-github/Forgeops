@@ -21,6 +21,7 @@ export function Layout() {
         <nav aria-label="Main">
           <NavLink to="/" end>War Room</NavLink>
           <NavLink to="/investigations">History</NavLink>
+          <NavLink to="/connectors">Connectors</NavLink>
         </nav>
         <span className="muted">{me?.workspace.name} · {me?.user.email}</span>
         <button className="secondary" onClick={onSignOut}>Sign out</button>

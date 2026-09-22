@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router";
 import { RequireAuth } from "../auth/AuthProvider";
 import { Layout } from "../components/Layout";
+import { ConnectorsPage } from "../pages/ConnectorsPage";
 import { InvestigationsPage } from "../pages/InvestigationsPage";
 import { LoginPage } from "../pages/LoginPage";
 import { ReportPage } from "../pages/ReportPage";
@@ -26,6 +27,7 @@ export function App() {
           )}
           <Route element={<RequireAuth><Layout /></RequireAuth>}>
             <Route index element={<WarRoomPage />} />
+            <Route path="connectors" element={<ConnectorsPage />} />
             <Route path="investigations" element={<InvestigationsPage />} />
             <Route path="investigations/:id" element={<WarRoomPage />} />
             <Route path="investigations/:id/report" element={<ReportPage />} />

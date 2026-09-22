@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "forgeops-api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["--directory", "backend", "run", "python", "-m", "forgeops.devtools.serve"],
+      "port": 8000
+    },
+    {
       "name": "forgeops-web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
