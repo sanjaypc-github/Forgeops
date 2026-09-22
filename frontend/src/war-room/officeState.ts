@@ -95,6 +95,18 @@ const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : 
 const num = (v: unknown, fallback = 0): number => (typeof v === "number" ? v : fallback);
 const short = (text: string, n = 90): string => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
 
+/** `{"base":"v2.13.4","head":"v2.14.0"}` -> `base v2.13.4 · head v2.14.0` (readable in a bubble). */
+export function readableArgs(summary: string): string {
+  if (!summary || summary === "{}") return "";
+  try {
+    const parsed = JSON.parse(summary) as Record<string, unknown>;
+    return Object.entries(parsed).map(([k, v]) => `${k} ${typeof v === "string" ? v : JSON.stringify(v)}`).join(" · ");
+  } catch {
+    // truncated summaries are not valid JSON; strip the punctuation instead
+    return summary.replace(/[{}"]/g, "").replace(/,/g, " · ").replace(/:/g, " ");
+  }
+}
+
 export function initialOfficeState(desks: Desk[] = []): OfficeState {
   const connected = new Set(desks.filter((d) => d.connected).map((d) => d.id));
   const known = new Set(desks.map((d) => d.id));
@@ -171,7 +183,7 @@ export function applyOfficeEvent(prev: OfficeState, event: InvestigationEvent): 
 
     case "tool_called": {
       if (!agent) return s;
-      const text = `${str(d.tool)} ${str(d.summary) === "{}" ? "" : str(d.summary)}`.trim();
+      const text = `${str(d.tool)} ${readableArgs(str(d.summary))}`.trim();
       s = patchAgent(s, agent, { mode: agent === "action" ? "working" : "calling", bubble: bubble("tool", text),
         toolCalls: s.agents[agent].toolCalls + 1 });
       return feed(s, event, agent, `→ ${text}`);

@@ -1,33 +1,49 @@
 :root {
-  --bg: #f2f3f0;
-  --surface: #ffffff;
-  --sunk: #e7e9e4;
-  --ink: #16202a;
-  --ink-2: #4a5560;
-  --line: #d3d7d0;
-  --accent: #c8590a;
-  --steel: #2f5d8a;
+  /* neutrals lean slightly green-grey so the warm pixel floor stays the loudest colour on screen */
+  --bg: #eceee9;
+  --surface: #f9faf7;
+  --sunk: #e1e4de;
+  --ink: #1b201d;
+  --ink-2: #4a534e;
+  --ink-3: #6b746f;
+  --line: #cfd5cf;
+  --line-strong: #b4bcb6;
+  --primary: #1f3a2f;
+  --primary-ink: #f4f7f3;
+  --focus: #2f5fb4;
+  --link: #2a56a6;
   --ok: #2e7d4f;
-  --warn: #a86b00;
+  --warn: #9a6a00;
   --bad: #b3261e;
-  --font: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  /* the one warm value, reserved for the live incident clock */
+  --clock: #d97a0b;
+  --font: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Red Hat Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --pixel: "Silkscreen", var(--mono);
+  --radius: 6px;
+  --shadow: 0 1px 2px rgba(27, 32, 29, 0.06), 0 6px 18px rgba(27, 32, 29, 0.07);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f151b;
-    --surface: #17202a;
-    --sunk: #111920;
-    --ink: #e6eaee;
-    --ink-2: #9aa6b1;
-    --line: #2a3642;
-    --accent: #f08a3c;
-    --steel: #7faedb;
-    --ok: #6bc58e;
-    --warn: #e3b04b;
+    --bg: #111412;
+    --surface: #181c19;
+    --sunk: #0d100e;
+    --ink: #e6ebe7;
+    --ink-2: #aab4ae;
+    --ink-3: #87918b;
+    --line: #2b322d;
+    --line-strong: #3d463f;
+    --primary: #cfe3d6;
+    --primary-ink: #0f1a14;
+    --focus: #8fb3f0;
+    --link: #8fb3f0;
+    --ok: #74c794;
+    --warn: #e0b04e;
     --bad: #f2837b;
+    --clock: #f39a2e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
     color-scheme: dark;
   }
 }

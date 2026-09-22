@@ -19,7 +19,8 @@ export function Layout() {
       <header className="topbar">
         <span className="brand">ForgeOps</span>
         <nav aria-label="Main">
-          <NavLink to="/" end>Investigations</NavLink>
+          <NavLink to="/" end>War Room</NavLink>
+          <NavLink to="/investigations">History</NavLink>
         </nav>
         <span className="muted">{me?.workspace.name} · {me?.user.email}</span>
         <button className="secondary" onClick={onSignOut}>Sign out</button>

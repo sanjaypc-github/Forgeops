@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { EventType, InvestigationEvent } from "../api/types";
 
 export const TERMINAL_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
@@ -40,15 +40,21 @@ function reducer(state: StreamState, action: Action): StreamState {
   }
 }
 
-export function useEventStream(investigationId: string): StreamState {
+export interface EventStream extends StreamState {
+  /** Fetch events stored after the last one we have (used after the live stream has ended). */
+  refresh: () => void;
+}
+
+export function useEventStream(investigationId: string | null): EventStream {
   const [state, dispatch] = useReducer(reducer, initialStreamState);
+  const lastSeq = useRef(0);
+  lastSeq.current = state.events.at(-1)?.seq ?? 0;
 
   useEffect(() => {
     dispatch({ kind: "reset" });
+    if (!investigationId) return;
     // The browser resends Last-Event-ID on automatic reconnects; the server replays from there.
-    const source = new EventSource(`/api/investigations/${investigationId}/events`, {
-      withCredentials: true,
-    });
+    const source = new EventSource(`/api/investigations/${investigationId}/events`, { withCredentials: true });
     source.onopen = () => dispatch({ kind: "connected", value: true });
     source.onerror = () => dispatch({ kind: "connected", value: false });
     source.onmessage = (message: MessageEvent<string>) => {
@@ -59,5 +65,16 @@ export function useEventStream(investigationId: string): StreamState {
     return () => source.close();
   }, [investigationId]);
 
-  return state;
+  const refresh = useCallback(() => {
+    if (!investigationId) return;
+    const once = new EventSource(`/api/investigations/${investigationId}/events?after=${lastSeq.current}`,
+      { withCredentials: true });
+    once.onmessage = (message: MessageEvent<string>) =>
+      dispatch({ kind: "event", event: JSON.parse(message.data) as InvestigationEvent });
+    // The server ends the replay for finished investigations; stop the browser from reconnecting.
+    once.onerror = () => once.close();
+    window.setTimeout(() => once.close(), 5000);
+  }, [investigationId]);
+
+  return { ...state, refresh };
 }

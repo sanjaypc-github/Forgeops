@@ -148,3 +148,10 @@ test("the live feed keeps a bounded, readable history", () => {
   expect(s.feed.at(-1)).toMatchObject({ agent: "code", text: expect.stringContaining("github.list_commits") });
   expect(s.feed.length).toBeLessThanOrEqual(60);
 });
+
+test("tool arguments are shown readably", async () => {
+  const { readableArgs } = await import("./officeState");
+  expect(readableArgs('{"base":"v2.13.4","head":"v2.14.0"}')).toBe("base v2.13.4 · head v2.14.0");
+  expect(readableArgs("{}")).toBe("");
+  expect(readableArgs("{\"a\":1,\"b\":[1]}")).toBe("a 1 · b [1]");
+});
