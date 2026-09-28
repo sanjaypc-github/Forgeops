@@ -191,8 +191,46 @@ async def test_http_transport_sends_auth_and_read_only_headers(http_server):
     try:
         assert [t.name for t in await conn.list_tools() if t.permission == "read"] == ["testhttp.headers"]
         read = json.loads((await conn.call("testhttp.headers", {})).content)
-        assert read == {"auth": True, "readonly": "true"}
+        assert (read["auth"], read["readonly"]) == (True, "true")
         write = json.loads((await conn.call("testhttp.headers_write", {})).content)
-        assert write == {"auth": True, "readonly": None}  # the write session is a separate, non-read-only session
+        # the write session is a separate, non-read-only session
+        assert (write["auth"], write["readonly"]) == (True, None)
+    finally:
+        await conn.aclose()
+
+
+async def test_an_oauth_connection_sends_the_token_its_provider_hands_over(http_server):
+    """The header is filled when the session opens, so a refreshed token is the one actually used."""
+    handed: list[str] = []
+
+    async def access_token() -> str:
+        handed.append("at_fresh")
+        return "at_fresh"
+
+    definition = ConnectorDefinition(
+        type="cloudy", display_name="Cloudy", description="test", agents=[AgentId.frontend_hosting],
+        status="available", transport="http", auth="oauth", url=http_server,
+        headers={"Authorization": "Bearer {access_token}"},
+        tools=[ToolMapping(upstream="request_headers", name="cloudy.headers",
+                           capability=Capability.hosting, permission="read")])
+    conn = McpConnector(definition, "con_oauth", config={}, secrets={}, access_token=access_token)
+    try:
+        assert handed == []  # nothing is fetched until a session is opened
+        seen = json.loads((await conn.call("cloudy.headers", {})).content)
+        assert seen["token_tail"] == "resh" and handed == ["at_fresh"]
+    finally:
+        await conn.aclose()
+
+
+async def test_a_token_connection_never_asks_for_an_access_token(http_server):
+    definition = ConnectorDefinition(
+        type="testhttp", display_name="Test HTTP", description="test", agents=[AgentId.code],
+        status="available", transport="http", url=http_server,
+        headers={"Authorization": "Bearer {token}"},
+        tools=[ToolMapping(upstream="request_headers", name="testhttp.headers",
+                           capability=Capability.code, permission="read")])
+    conn = McpConnector(definition, "con_t", config={}, secrets={"token": "t0k"})
+    try:
+        assert json.loads((await conn.call("testhttp.headers", {})).content)["auth"] is True
     finally:
         await conn.aclose()

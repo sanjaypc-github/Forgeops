@@ -43,6 +43,7 @@ def request_headers(ctx: Context) -> str:
     return json.dumps({
         "auth": headers.get("authorization") == "Bearer t0k",
         "readonly": headers.get("x-mcp-readonly"),
+        "token_tail": headers.get("authorization", "")[-4:],  # enough to tell two test tokens apart
     }, sort_keys=True)
 
 

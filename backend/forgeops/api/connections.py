@@ -141,7 +141,7 @@ async def create_connection(
         workspace_id=user.workspace_id, type=body.type, name=body.name.strip(), config=body.config,
         secret_encrypted=state.secret_box.encrypt_json(body.secrets) if body.secrets else None,
     )
-    connector = build_connector(row, state.secret_box, state.settings, state.embedder)
+    connector = build_connector(row, state.secret_box, state.settings, state.embedder, state.session_factory)
     try:
         health = await connector.health_check()
     finally:
@@ -192,7 +192,7 @@ async def connection_tools(connection_id: str, request: Request,
     state = request.app.state
     row = await _owned(request, user, connection_id)
     try:
-        connector = build_connector(row, state.secret_box, state.settings, state.embedder)
+        connector = build_connector(row, state.secret_box, state.settings, state.embedder, state.session_factory)
     except ValueError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     try:
@@ -211,7 +211,7 @@ async def test_connection(connection_id: str, request: Request,
     state = request.app.state
     row = await _owned(request, user, connection_id)
     try:
-        connector = build_connector(row, state.secret_box, state.settings, state.embedder)
+        connector = build_connector(row, state.secret_box, state.settings, state.embedder, state.session_factory)
         try:
             health = await connector.health_check()
         finally:

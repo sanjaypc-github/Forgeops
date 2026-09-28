@@ -44,6 +44,9 @@ class ConnectorDefinition(BaseModel):
     url: str | None = None  # http; may contain {config_key}
     headers: dict[str, str] = Field(default_factory=dict)  # http read session; values may contain {config_key}
     write_headers: dict[str, str] = Field(default_factory=dict)  # http write session (approved actions only)
+    # "token": the customer pastes a token into the form. "oauth": they approve in the provider's window.
+    auth: Literal["token", "oauth"] = "token"
+    oauth_scopes: list[str] = Field(default_factory=list)  # empty means "whatever the server offers"
     config_fields: list[ConfigField] = Field(default_factory=list)
     tools: list[ToolMapping] = Field(default_factory=list)  # allowlist
     docs_url: str | None = None

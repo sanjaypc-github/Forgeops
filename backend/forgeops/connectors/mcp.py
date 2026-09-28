@@ -8,6 +8,7 @@ action calls one.
 import asyncio
 import os
 import shutil
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from typing import Any, Literal
 
@@ -26,6 +27,8 @@ CALL_TIMEOUT_SECONDS = 30
 START_TIMEOUT_SECONDS = 90  # npx may download the server on first use
 
 Mode = Literal["read", "write"]
+# Returns a usable access token, refreshing it first when it is about to expire.
+AccessToken = Callable[[], Awaitable[str]]
 
 
 class _TemplateValues(dict):
@@ -97,7 +100,11 @@ class _Session:
 
 class McpConnector:
     def __init__(self, definition: ConnectorDefinition, connection_id: str,
-                 config: dict[str, Any], secrets: dict[str, Any]) -> None:
+                 config: dict[str, Any], secrets: dict[str, Any],
+                 access_token: AccessToken | None = None) -> None:
+        # OAuth connections have no pasted token: the header is filled from a token that may be
+        # refreshed between sessions, so it is fetched when a session opens, not at construction.
+        self._access_token = access_token
         self.definition = definition
         self.connection_id = connection_id
         self.connector_type = definition.type
@@ -128,6 +135,8 @@ class McpConnector:
 
         async def open_http(stack: AsyncExitStack):
             headers = definition.write_headers if mode == "write" else definition.headers
+            if self._access_token is not None:
+                self._values["access_token"] = await self._access_token()
             client = await stack.enter_async_context(httpx2.AsyncClient(
                 headers={k: self._fill(v) for k, v in headers.items()},
                 timeout=httpx2.Timeout(CALL_TIMEOUT_SECONDS, read=300)))
