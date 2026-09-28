@@ -11,6 +11,7 @@ from forgeops.config import Settings, get_settings
 from forgeops.connectors.factory import build_registry_for_workspace
 from forgeops.db.session import create_engine_and_factory
 from forgeops.engine.checkpoint import open_checkpointer
+from forgeops.engine.llm.offline import OfflineLLM
 from forgeops.engine.llm.openrouter import OpenRouterLLM
 from forgeops.engine.runner import InvestigationRunner
 from forgeops.events.bus import EventBus
@@ -41,7 +42,8 @@ async def startup(app: FastAPI, settings: Settings) -> None:
         _, workspace = await ensure_admin(session, settings)
 
     # Engine. Factories are looked up on app.state at call time so tests can replace them.
-    state.llm_factory = lambda: OpenRouterLLM.from_settings(state.settings)
+    state.llm_factory = lambda: (OfflineLLM if state.settings.forgeops_llm == "offline"
+                                 else OpenRouterLLM).from_settings(state.settings)
 
     async def registry_factory(workspace_id: str):
         return await build_registry_for_workspace(

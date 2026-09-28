@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     session_ttl_hours: int = 72
 
+    # "openrouter" for the real provider, "offline" for the labelled development stand-in
+    forgeops_llm: str = "openrouter"
+
     # LLM (OpenRouter)
     openrouter_api_key: SecretStr | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"

@@ -17,6 +17,9 @@ from forgeops.engine.budgets import Budgets
 from forgeops.engine.graph import RunDeps, build_graph
 from forgeops.engine.llm.base import LLM, LLMNotConfigured
 from forgeops.engine.llm.metering import MeteredLLM, UsageMeter, merge_usage
+from forgeops.engine.llm.offline import LABEL as OFFLINE_LABEL
+from forgeops.engine.llm.offline import NOTE as OFFLINE_NOTE
+from forgeops.engine.llm.offline import OfflineLLM
 from forgeops.engine.models import Decision, Incident
 from forgeops.events.bus import EventBus
 from forgeops.events.models import EventIn, EventType
@@ -89,8 +92,12 @@ class InvestigationRunner:
         registry: CapabilityRegistry | None = None
         meter = UsageMeter(emit)
         try:
-            llm = MeteredLLM(self._llm_factory(), meter)
+            provider = self._llm_factory()
+            llm = MeteredLLM(provider, meter)
             registry = await self._registry_factory(inv.workspace_id)
+            if isinstance(provider, OfflineLLM):
+                # travels into the plan warnings, the RCA's "could not check" list and the report
+                registry.warnings.append(f"{OFFLINE_LABEL}. {OFFLINE_NOTE}")
 
             async def notes() -> list[str]:
                 return await self._user_notes(inv.id)

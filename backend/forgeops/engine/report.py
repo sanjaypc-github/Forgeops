@@ -3,6 +3,8 @@
 from collections.abc import Mapping
 from typing import Any
 
+from forgeops.engine.llm.offline import LABEL as OFFLINE_LABEL
+
 
 def _cell(text: str | None) -> str:
     return (text or "").replace("|", "\\|").replace("\n", " ")
@@ -36,8 +38,11 @@ def render_report(state: Mapping[str, Any], usage: Any = None) -> str:
     decision = state.get("decision")
     results = {r.recommendation_id: r for r in state.get("action_results") or []}
 
-    out = [f"# Investigation report — {state['investigation_id']}", "",
-           f"**Problem reported:** {incident.text}", ""]
+    out = [f"# Investigation report — {state['investigation_id']}", ""]
+    demo = [w for w in (state.get("warnings") or []) if w.startswith(OFFLINE_LABEL)]
+    if demo:
+        out += [f"> ⚠️ **{demo[0]}**", ""]
+    out += [f"**Problem reported:** {incident.text}", ""]
     if plan:
         out += [f"**Plan:** {plan.summary}", ""]
 
