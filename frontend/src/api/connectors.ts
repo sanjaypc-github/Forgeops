@@ -21,6 +21,7 @@ export interface Ability {
 }
 
 export interface CatalogEntry {
+  auth: "token" | "oauth";
   type: string;
   display_name: string;
   description: string;
@@ -67,6 +68,10 @@ export const DESK_LABELS: Record<AgentId, string> = {
 export const DESK_ORDER: AgentId[] = [
   "code", "frontend_hosting", "backend_services", "database", "observability", "knowledge", "action",
 ];
+
+export const startOAuth = (body: { type: string; name?: string }) =>
+  api<{ connection_id: string; authorize_url: string }>("/connections/oauth/start",
+    { method: "POST", body: JSON.stringify(body) });
 
 export const getCatalog = () => api<CatalogEntry[]>("/connectors/catalog");
 export const listConnections = () => api<Connection[]>("/connections");

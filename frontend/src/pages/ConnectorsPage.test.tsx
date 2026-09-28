@@ -7,6 +7,7 @@ import { ConnectorsPage } from "./ConnectorsPage";
 
 const GITHUB: CatalogEntry = {
   type: "github", display_name: "GitHub", description: "Repo", agents: ["code", "frontend_hosting"],
+  auth: "token",
   status: "available", docs_url: null, supports_writes: true,
   setup_steps: ["Create a fine-grained token."],
   config_fields: [
@@ -140,4 +141,51 @@ test("lists abilities per desk, re-tests and disconnects a connection", async ()
   await userEvent.click(screen.getByRole("button", { name: /Disconnect$/ }));
   await userEvent.click(screen.getByRole("button", { name: "Disconnect Site" }));
   expect(await screen.findByText(/Nothing connected yet/)).toBeInTheDocument();
+});
+
+
+const CLOUDY: CatalogEntry = {
+  ...GITHUB, type: "cloudy", display_name: "Cloudy", auth: "oauth", agents: ["frontend_hosting"],
+  config_fields: [], setup_steps: [], supports_writes: false,
+};
+
+test("an OAuth connector opens the provider's own consent window", async () => {
+  const opened: string[] = [];
+  vi.stubGlobal("open", (url: string) => { opened.push(url); return null; });
+  const fetchMock = serve((url, init) => {
+    if (url === "/api/connectors/catalog") return json([CLOUDY]);
+    if (url === "/api/connections/oauth/start" && init?.method === "POST") {
+      return json({ connection_id: "con_1", authorize_url: "https://auth.cloudy.test/authorize?x=1" }, 201);
+    }
+    if (url === "/api/connections") return json([]);
+    return undefined;
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Connect Cloudy" }));
+  // no token to paste: the provider asks, not ForgeOps
+  expect(screen.queryByLabelText(/token/i)).toBeNull();
+  expect(screen.getByText(/never sees your password/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Continue to Cloudy" }));
+
+  expect(opened).toEqual(["https://auth.cloudy.test/authorize?x=1"]);
+  const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!;
+  expect(JSON.parse(post[1]!.body as string)).toEqual({ type: "cloudy", name: "Cloudy" });
+});
+
+test("the page reloads connections when the consent window reports back", async () => {
+  let listed: Connection[] = [];
+  serve((url) => {
+    if (url === "/api/connectors/catalog") return json([CLOUDY]);
+    if (url === "/api/connections") return json(listed);
+    return undefined;
+  });
+  renderPage();
+  expect(await screen.findByText(/Nothing connected yet/)).toBeInTheDocument();
+
+  listed = [{ id: "con_1", type: "cloudy", name: "Cloudy", config: {}, status: "connected",
+    last_error: null, created_at: "2026-09-28T00:00:00Z" }];
+  window.postMessage({ source: "forgeops-oauth", ok: true }, "*");
+
+  expect(await screen.findByText("Connected")).toBeInTheDocument();
 });

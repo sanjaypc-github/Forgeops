@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, ExternalLink, Lock, Plug, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
 import {
   DESK_LABELS, DESK_ORDER, byDesk, connectionTools, createConnection, deleteConnection, getCatalog,
-  listConnections, testConnection, type Ability, type CatalogEntry, type Connection, type ConnectionCreated,
+  listConnections, startOAuth, testConnection, type Ability, type CatalogEntry, type Connection,
+  type ConnectionCreated,
 } from "../api/connectors";
 import type { AgentId } from "../api/types";
 import "../styles/connectors.css";
@@ -40,8 +41,9 @@ function DeskChips({ desks }: { desks: AgentId[] }) {
 }
 
 function ConnectForm({ entry, onCancel, onConnected }: {
-  entry: CatalogEntry; onCancel: () => void; onConnected: (created: ConnectionCreated) => void;
+  entry: CatalogEntry; onCancel: () => void; onConnected: (created: ConnectionCreated | null) => void;
 }) {
+  const oauth = entry.auth === "oauth";
   const [name, setName] = useState(entry.display_name);
   const [values, setValues] = useState<Record<string, string | boolean>>({});
   const formRef = useRef<HTMLFormElement>(null);
@@ -57,8 +59,21 @@ function ConnectForm({ entry, onCancel, onConnected }: {
     },
   });
 
+  const connectOAuth = useMutation({
+    mutationFn: () => startOAuth({ type: entry.type, name: name.trim() || entry.display_name }),
+    onSuccess: ({ authorize_url }) => {
+      // the provider's own consent window; ForgeOps never sees the sign-in
+      window.open(authorize_url, "forgeops-oauth", "width=600,height=760");
+      onConnected(null);
+    },
+  });
+
   function onSubmit(event: FormEvent) {
     event.preventDefault();
+    if (entry.auth === "oauth") {
+      connectOAuth.mutate();
+      return;
+    }
     const config: Record<string, string | boolean> = {};
     const secrets: Record<string, string> = {};
     for (const field of entry.config_fields) {
@@ -116,6 +131,13 @@ function ConnectForm({ entry, onCancel, onConnected }: {
         ))}
       </div>
 
+      {oauth && (
+        <p className="muted small">
+          You approve access in {entry.display_name}'s own window. ForgeOps never sees your password,
+          stores only the access it was granted, and renews it while an investigation runs.
+        </p>
+      )}
+
       {entry.abilities.length > 0 && (
         <details className="preview">
           <summary>What the agents get ({entry.abilities.length} abilities)</summary>
@@ -123,15 +145,21 @@ function ConnectForm({ entry, onCancel, onConnected }: {
         </details>
       )}
 
-      <p className="muted small">
-        Secrets are encrypted on the server and never shown again. Investigations only use read abilities.
-      </p>
+      {!oauth && (
+        <p className="muted small">
+          Secrets are encrypted on the server and never shown again. Investigations only use read abilities.
+        </p>
+      )}
       {create.isError && <p className="error" role="alert">{create.error.message}</p>}
+      {connectOAuth.isError && <p className="error" role="alert">{connectOAuth.error.message}</p>}
       <div className="row">
-        <button type="submit" disabled={create.isPending}>
-          {create.isPending ? "Connecting and testing…" : "Connect and test"}
+        <button type="submit" disabled={create.isPending || connectOAuth.isPending}>
+          {oauth
+            ? (connectOAuth.isPending ? "Opening…" : `Continue to ${entry.display_name}`)
+            : (create.isPending ? "Connecting and testing…" : "Connect and test")}
         </button>
-        <button type="button" className="secondary" onClick={onCancel} disabled={create.isPending}>Cancel</button>
+        <button type="button" className="secondary" onClick={onCancel}
+                disabled={create.isPending || connectOAuth.isPending}>Cancel</button>
       </div>
     </form>
   );
@@ -219,11 +247,23 @@ export function ConnectorsPage() {
     .filter((e) => desk === "all" || e.agents.includes(desk))
     .sort((a, b) => Number(a.status !== "available") - Number(b.status !== "available"));
 
-  function onConnected(created: ConnectionCreated) {
-    setNotes((n) => ({ ...n, [created.id]: created.detail }));
+  function onConnected(created: ConnectionCreated | null) {
+    if (created) setNotes((n) => ({ ...n, [created.id]: created.detail }));
     setConnecting(null);
     queryClient.invalidateQueries({ queryKey: CONNECTIONS_KEY });
   }
+
+  // the consent window tells the page when the customer is done, so the list shows the result
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      const data = event.data as { source?: string } | null;
+      if (data && data.source === "forgeops-oauth") {
+        queryClient.invalidateQueries({ queryKey: CONNECTIONS_KEY });
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [queryClient]);
 
   return (
     <div className="connectors">
