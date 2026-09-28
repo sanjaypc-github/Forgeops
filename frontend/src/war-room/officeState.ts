@@ -88,6 +88,8 @@ export interface OfficeState {
   feed: FeedItem[];
   failure: string | null;
   reportReady: boolean;
+  /** What the run has spent so far, and what the harness saved. */
+  cost: { calls: number; inputTokens: number; outputTokens: number; cachedTokens: number; savedTokens: number };
 }
 
 const FEED_LIMIT = 60;
@@ -120,6 +122,7 @@ export function initialOfficeState(desks: Desk[] = []): OfficeState {
     lastSeq: 0, phase: "idle", incident: null, startedAt: null, endedAt: null, agents, plan: null,
     evidence: [], questions: [], rca: null, recommendations: [], decision: null, actions: [],
     timeline: [], feed: [], failure: null, reportReady: false,
+    cost: { calls: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, savedTokens: 0 },
   };
 }
 
@@ -248,6 +251,19 @@ export function applyOfficeEvent(prev: OfficeState, event: InvestigationEvent): 
       if (!agent) return s;
       s = patchAgent(s, agent, { mode: "failed", location: agent, error: str(d.error), bubble: bubble("error", str(d.error)) });
       return feed(s, event, agent, `${title(agent)} failed: ${short(str(d.error), 60)}`, "bad");
+
+    case "llm_usage":
+      return { ...s, cost: {
+        calls: num(d.run_calls, s.cost.calls + 1),
+        inputTokens: num(d.run_input_tokens, s.cost.inputTokens),
+        outputTokens: num(d.run_output_tokens, s.cost.outputTokens),
+        cachedTokens: s.cost.cachedTokens + num(d.cached_tokens),
+        savedTokens: num(d.run_saved_tokens, s.cost.savedTokens),
+      } };
+
+    case "context_compacted":
+      // the saved total also arrives with the next usage event; this keeps the panel live meanwhile
+      return { ...s, cost: { ...s.cost, savedTokens: s.cost.savedTokens + num(d.saved_tokens) } };
 
     case "review_completed": {
       const followUps = Array.isArray(d.follow_ups) ? d.follow_ups.length : 0;

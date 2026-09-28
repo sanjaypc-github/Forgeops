@@ -44,3 +44,22 @@ def test_report_contains_the_essentials():
 def test_report_without_rca_says_so():
     state = _state() | {"rca": None, "decision": None, "action_results": []}
     assert "No root cause was determined" in render_report(state)
+
+
+def test_report_shows_what_the_run_cost_per_desk():
+    from forgeops.engine.llm.metering import AgentUsage, RunUsage
+
+    usage = RunUsage(calls=9, input_tokens=120_000, output_tokens=4_000, cached_tokens=30_000,
+                     saved_tokens=18_000,
+                     by_agent={"code": AgentUsage(calls=5, input_tokens=90_000, output_tokens=2_500),
+                               "rca": AgentUsage(calls=1, input_tokens=30_000, output_tokens=1_500)})
+    md = render_report(_state() | {"context_saved_chars": 40_000}, usage=usage)
+    assert "## Run cost" in md
+    assert "9 model calls · 120,000 in · 4,000 out · 124,000 tokens total" in md
+    assert "30,000 input tokens served from the provider's cache" in md
+    assert "18,000 input tokens saved by compacting older tool output" in md
+    assert "| code | 5 | 90,000 | 2,500 |" in md
+
+
+def test_report_has_no_cost_section_without_usage():
+    assert "Run cost" not in render_report(_state())

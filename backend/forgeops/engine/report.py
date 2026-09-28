@@ -8,7 +8,27 @@ def _cell(text: str | None) -> str:
     return (text or "").replace("|", "\\|").replace("\n", " ")
 
 
-def render_report(state: Mapping[str, Any]) -> str:
+def _run_cost(usage: Any, saved_chars: int) -> list[str]:
+    """What the investigation cost, per desk, so the owner can see where the tokens went."""
+    out = ["", "## Run cost", "",
+           f"**{usage.calls} model calls · {usage.input_tokens:,} in · {usage.output_tokens:,} out"
+           f" · {usage.total_tokens:,} tokens total**", ""]
+    if usage.cached_tokens or usage.saved_tokens or saved_chars:
+        savings = []
+        if usage.cached_tokens:
+            savings.append(f"{usage.cached_tokens:,} input tokens served from the provider's cache")
+        if usage.saved_tokens or saved_chars:
+            savings.append(f"about {max(usage.saved_tokens, saved_chars // 4):,} input tokens saved by "
+                           "compacting older tool output")
+        out += ["Savings: " + "; ".join(savings) + ".", ""]
+    if usage.by_agent:
+        out += ["| Desk | Calls | Input | Output |", "|---|---|---|---|"]
+        for agent, spent in sorted(usage.by_agent.items(), key=lambda kv: -kv[1].input_tokens):
+            out.append(f"| {agent} | {spent.calls} | {spent.input_tokens:,} | {spent.output_tokens:,} |")
+    return out
+
+
+def render_report(state: Mapping[str, Any], usage: Any = None) -> str:
     incident = state["incident"]
     rca = state.get("rca")
     plan = state.get("plan")
@@ -79,6 +99,9 @@ def render_report(state: Mapping[str, Any]) -> str:
     if errors:
         out += ["", "## Errors during the investigation", ""]
         out += [f"- {e.agent.value}: {e.message}" for e in errors]
+
+    if usage is not None and usage.calls:
+        out += _run_cost(usage, state.get("context_saved_chars") or 0)
 
     if decision:
         out += ["", f"_Decision: {decision.kind.replace('_', ' ')} via {decision.channel}"

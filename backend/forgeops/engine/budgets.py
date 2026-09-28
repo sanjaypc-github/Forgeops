@@ -15,4 +15,6 @@ class Budgets:
     review_rounds: int = 1
     followup_rounds: int = 2
     run_seconds: float = 1200
-    tool_output_chars: int = 8000
+    tool_output_chars: int = 8000  # default cap; a tool may set its own in the catalog
+    keep_full_tool_outputs: int = 3  # older tool results collapse to their stored excerpt
+    collapsed_output_chars: int = 500

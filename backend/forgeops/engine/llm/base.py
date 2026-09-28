@@ -41,6 +41,7 @@ class LLMReply(BaseModel):
     tool_calls: list[ToolCall] = Field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_tokens: int = 0  # served from the provider's prompt cache
 
 
 class LLM(Protocol):

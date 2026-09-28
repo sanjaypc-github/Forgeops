@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     forgeops_specialist_seconds: float = 300
     forgeops_answer_seconds: float = 90
     forgeops_run_seconds: float = 1800
+    # Context discipline: how many recent tool results each desk keeps in full
+    forgeops_keep_full_tool_outputs: int = 3
+    forgeops_tool_output_chars: int = 8000
+    # Ask the provider to cache the stable prompt prefix (paid models; free ones ignore it)
+    forgeops_prompt_cache: bool = False
 
     # Knowledge vault search index location
     knowledge_data_dir: str = "../.forgeops-data/knowledge"
@@ -47,7 +52,9 @@ class Settings(BaseSettings):
         from forgeops.engine.budgets import Budgets
 
         return Budgets(specialist_seconds=self.forgeops_specialist_seconds,
-                       answer_seconds=self.forgeops_answer_seconds, run_seconds=self.forgeops_run_seconds)
+                       answer_seconds=self.forgeops_answer_seconds, run_seconds=self.forgeops_run_seconds,
+                       tool_output_chars=self.forgeops_tool_output_chars,
+                       keep_full_tool_outputs=self.forgeops_keep_full_tool_outputs)
 
     def model_for(self, role: str) -> str:
         if role not in MODEL_ROLES:

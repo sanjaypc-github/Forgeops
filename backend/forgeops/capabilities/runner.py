@@ -46,8 +46,8 @@ class ToolRunner:
                 return ToolResult(ok=False, error=f"{type(exc).__name__}: {exc}")
         raise AssertionError("unreachable")
 
-    def _truncate(self, result: ToolResult) -> ToolResult:
-        limit = self._budgets.tool_output_chars
+    def _truncate(self, result: ToolResult, limit: int | None = None) -> ToolResult:
+        limit = limit or self._budgets.tool_output_chars
         if len(result.content) <= limit:
             return result
         dropped = len(result.content) - limit
@@ -73,7 +73,8 @@ class ToolRunner:
         if tool_name not in allowed or not known:
             result = ToolResult(ok=False, error=f"{tool_name} is not available to this agent")
         else:
-            result = self._truncate(await self._attempt(tool_name, arguments))
+            result = self._truncate(await self._attempt(tool_name, arguments),
+                                    spec.max_output_chars if spec else None)
         result = result.model_copy(update={"duration_ms": int((time.perf_counter() - started) * 1000)})
 
         first_line = (result.content.strip().splitlines() or [""])[0] if result.ok else (result.error or "")

@@ -54,7 +54,32 @@ Find the root cause of a production problem, the exact point of failure, and the
 
 ## 7. Budgets and forced submission
 
-Defaults (see `engine/budgets.py`): specialist 8 tool calls / 150 s; answering a colleague 3 calls / 45 s; tool call timeout 20 s; review rounds 1; "investigate more" rounds 2; whole investigation 20 minutes. When a budget is reached the engine forces `submit_findings` so the agent reports what it has. Running out of budget is stated in limitations.
+Defaults (see `engine/budgets.py`, overridable in `.env`): specialist 8 tool calls / 300 s (`FORGEOPS_SPECIALIST_SECONDS`); answering a colleague 3 calls / 45 s; tool call timeout 20 s; review rounds 1; "investigate more" rounds 2; whole investigation 20 minutes. When a budget is reached the engine forces `submit_findings` so the agent reports what it has. Running out of budget is stated in limitations.
+
+## 7a. Context discipline
+
+Multi-agent work keeps each window small: every desk has its own message list, nothing from one desk's
+window enters another's, and only cited one-line findings cross between desks. The RCA agent never sees
+raw tool output at all — it reads evidence lines.
+
+Inside a desk, three rules keep the window from growing needlessly:
+
+| Rule | Effect |
+|---|---|
+| Per-tool output caps (`ToolMapping.max_output_chars`, default `Budgets.tool_output_chars`) | A job log may spend 16,000 characters; a branch list may spend 2,000 |
+| Rolling compaction (`Budgets.keep_full_tool_outputs`, default 3) | Older tool results collapse to their opening; `call_id` survives, so findings can still cite them, and the full result stays in the tool call record |
+| Stable system prompts | Nothing per-call (the clock, the task) lives in the system prompt, so a provider can cache the prefix (`FORGEOPS_PROMPT_CACHE=true` on models that support it) |
+
+Compaction is lossy on purpose. An agent that needs a dropped detail calls the tool again, which costs
+one tool call instead of resending the same output on every turn for the rest of the task.
+
+## 7b. Observability
+
+Every model call is metered (`engine/llm/metering.py`): input, output and cached tokens, attributed to
+the desk that spent them. Each call emits an `llm_usage` event, the War Room shows a live cost meter,
+the report ends with a **Run cost** table per desk, and the totals are stored on the investigation
+(`investigations.usage`) so runs can be compared over time. Compaction savings are reported as
+`context_compacted` events and included in that table.
 
 ## 8. Untrusted data
 

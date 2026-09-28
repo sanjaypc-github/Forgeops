@@ -7,7 +7,7 @@ import { ChatPanel } from "../war-room/ChatPanel";
 import { Office } from "../war-room/Office";
 import { initialOfficeState, reduceEvents, type Phase } from "../war-room/officeState";
 import type { Persona } from "../war-room/personas";
-import { ActivityPanel, AgentCard, EvidencePanel } from "../war-room/SidePanels";
+import { ActivityPanel, AgentCard, CostMeter, EvidencePanel } from "../war-room/SidePanels";
 
 const PHASE_LABEL: Record<Phase, string> = {
   idle: "Ready", planning: "Planning", investigating: "Investigating", reviewing: "Reviewing evidence",
@@ -120,6 +120,7 @@ export function WarRoomPage() {
             {tab === "evidence" && <EvidencePanel state={state} details={detail.data?.details ?? null} />}
             {tab === "activity" && <ActivityPanel state={state} />}
           </div>
+          <CostMeter state={state} />
         </aside>
       </div>
     </div>

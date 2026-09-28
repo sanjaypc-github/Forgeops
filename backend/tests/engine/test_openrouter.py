@@ -109,3 +109,32 @@ async def test_persistent_empty_answers_fail_with_the_reason():
     llm = OpenRouterLLM(api_key="k", models=MODELS, base_url=BASE, client=client, retry_delay=0)
     with pytest.raises(LLMError, match="Rate limit exceeded: free tier"):
         await llm.complete(LLMRequest(purpose="rca", model_role="rca", system="S", messages=[]))
+
+
+async def test_usage_including_cached_input_tokens_is_reported():
+    body = _completion({"role": "assistant", "content": "hello"})
+    body["usage"]["prompt_tokens_details"] = {"cached_tokens": 8}
+    client = AsyncOpenAI(api_key="k", base_url=BASE, http_client=httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, json=body))))
+    llm = OpenRouterLLM(api_key="k", models=MODELS, base_url=BASE, client=client)
+
+    reply = await llm.complete(LLMRequest(purpose="plan", model_role="supervisor", system="SYS",
+                                          messages=[Message(role="user", content="hi")]))
+    assert (reply.input_tokens, reply.output_tokens, reply.cached_tokens) == (11, 7, 8)
+
+
+async def test_prompt_cache_marks_the_stable_system_prefix():
+    seen: list = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx2.Response(200, json=_completion({"role": "assistant", "content": "ok"}))
+
+    client = AsyncOpenAI(api_key="k", base_url=BASE,
+                         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
+    llm = OpenRouterLLM(api_key="k", models=MODELS, base_url=BASE, client=client, prompt_cache=True)
+    await llm.complete(LLMRequest(purpose="plan", model_role="supervisor", system="SYS",
+                                  messages=[Message(role="user", content="hi")]))
+    body = json.loads(seen[-1].content)
+    assert body["messages"][0] == {"role": "system", "content": [
+        {"type": "text", "text": "SYS", "cache_control": {"type": "ephemeral"}}]}

@@ -72,6 +72,8 @@ class Investigation(Base):
     created_by: Mapped[str | None] = mapped_column(String(40))
     window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # What the run cost: calls and tokens, in total and per desk (see engine.llm.metering)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

@@ -98,11 +98,12 @@ async def plan_investigation(
     unavailable = [a for a in SPECIALISTS if a not in connected]
     draft = await ask_structured(
         llm, purpose="plan", model_role="supervisor",
-        system=prompts.system("supervisor_plan", now=now.isoformat(timespec="seconds"),
+        system=prompts.system("supervisor_plan",
                               available_agents=_desk_lines(connected),
                               unavailable_agents=_desk_lines(unavailable),
                               service_map=service_map.strip() or "(none provided)"),
-        messages=[Message(role="user", content=incident_text(incident))],
+        messages=[Message(role="user",
+                          content=prompts.now_line(_clock(now)) + "\n\n" + incident_text(incident))],
         schema=PlanDraft, tool_name="submit_plan",
         tool_description="Submit the investigation plan.", check=check,
     )
@@ -120,6 +121,10 @@ async def plan_investigation(
         tasks=[AgentTask(agent=t.agent, objective=t.objective, hints=t.hints) for t in draft.tasks],
         skipped=skipped,
     )
+
+
+def _clock(now: datetime | None) -> str:
+    return now.isoformat(timespec="seconds") if now else "unknown"
 
 
 def evidence_lines(evidence: list[Evidence]) -> str:
@@ -141,6 +146,7 @@ async def review_evidence(
         return "; ".join(problems) or None
 
     content = "\n\n".join([
+        prompts.now_line(_clock(now)),
         incident_text(incident),
         f"Plan: {plan.summary}\nHypotheses: {'; '.join(plan.hypotheses) or 'n/a'}",
         "Evidence so far:\n" + evidence_lines(evidence),
@@ -148,9 +154,7 @@ async def review_evidence(
     ])
     draft = await ask_structured(
         llm, purpose="review", model_role="supervisor",
-        system=prompts.system("supervisor_review",
-                              now=(now.isoformat(timespec="seconds") if now else "unknown"),
-                              available_agents=_desk_lines(connected)),
+        system=prompts.system("supervisor_review", available_agents=_desk_lines(connected)),
         messages=[Message(role="user", content=content)],
         schema=ReviewDraft, tool_name="submit_review",
         tool_description="Decide whether the evidence is sufficient.", check=check,
@@ -169,12 +173,11 @@ async def answer_followup(
     rca_text = (f"Root cause: {rca.summary}\nFailure point: {rca.failure_point}\n"
                 f"Confidence: {rca.confidence:.2f}\nMissing: {'; '.join(rca.missing_information) or 'none'}"
                 if rca else "No root-cause analysis is available yet.")
-    content = "\n\n".join([incident_text(incident), rca_text, "Evidence:\n" + evidence_lines(evidence),
-                           f"User question: {question}"])
+    content = "\n\n".join([prompts.now_line(_clock(now)), incident_text(incident), rca_text,
+                           "Evidence:\n" + evidence_lines(evidence), f"User question: {question}"])
     reply = await llm.complete(LLMRequest(
         purpose="followup", model_role="supervisor",
-        system=prompts.system("supervisor_followup",
-                              now=(now.isoformat(timespec="seconds") if now else "unknown")),
+        system=prompts.system("supervisor_followup"),
         messages=[Message(role="user", content=content)], max_tokens=800,
     ))
     return reply.text.strip()

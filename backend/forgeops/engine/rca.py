@@ -65,6 +65,7 @@ async def run_rca(
 
     answered = [q for q in questions if q.status == "answered"]
     content = "\n\n".join([
+        prompts.now_line(now.isoformat(timespec="seconds") if now else "unknown"),
         "Evidence:\n" + evidence_lines(evidence),
         incident_text(incident),
         f"Plan: {plan.summary}\nHypotheses: {'; '.join(plan.hypotheses) or 'n/a'}",
@@ -77,7 +78,7 @@ async def run_rca(
     ])
     draft = await ask_structured(
         llm, purpose="rca", model_role="rca",
-        system=prompts.system("rca", now=(now.isoformat(timespec="seconds") if now else "unknown")),
+        system=prompts.system("rca"),
         messages=[Message(role="user", content=content)], schema=RcaDraft, tool_name="submit_rca",
         tool_description="Submit the root-cause analysis.", check=check, max_tokens=6000,
     )

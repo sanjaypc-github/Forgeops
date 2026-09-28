@@ -65,6 +65,28 @@ export function ActivityPanel({ state }: { state: OfficeState }) {
   );
 }
 
+/** Compact tokens per run, so the cost of an investigation is never a surprise. */
+export function CostMeter({ state }: { state: OfficeState }) {
+  const { calls, inputTokens, outputTokens, cachedTokens, savedTokens } = state.cost;
+  if (!calls) return null;
+  const total = inputTokens + outputTokens;
+  const savings = [
+    savedTokens ? `${compact(savedTokens)} saved by compaction` : "",
+    cachedTokens ? `${compact(cachedTokens)} from cache` : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <p className="cost-meter small" aria-label="Run cost">
+      <span className="mono">{calls}</span> model {calls === 1 ? "call" : "calls"} ·{" "}
+      <span className="mono">{compact(total)}</span> tokens
+      {savings && <span className="muted"> · {savings}</span>}
+    </p>
+  );
+}
+
+function compact(tokens: number): string {
+  return tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
+}
+
 export function AgentCard({ state, id, onClose }: { state: OfficeState; id: keyof OfficeState["agents"]; onClose: () => void }) {
   const view = state.agents[id];
   const persona = PERSONAS[id];

@@ -8,6 +8,7 @@ from forgeops.capabilities.runner import ToolRunner
 from forgeops.engine.budgets import Budgets
 from forgeops.engine.graph import RunDeps
 from forgeops.engine.models import Capability, Incident
+from forgeops.engine.llm.metering import MeteredLLM
 from tests.engine.fakes import FakeConnector, ScriptedLLM, call, collect_events
 
 
@@ -65,18 +66,22 @@ def fake_connectors(with_write=True):
     return gh, kv
 
 
-async def make_deps(script_map, with_write=True):
+async def make_deps(script_map, with_write=True, meter=None):
     gh, kv = fake_connectors(with_write)
     registry = await CapabilityRegistry.build([gh, kv])
     events, emit = collect_events()
     llm = ScriptedLLM(script_map)
+    metered = llm
+    if meter is not None:
+        meter.attach(emit)
+        metered = MeteredLLM(llm, meter)
 
     async def notes():
         return []
 
-    deps = RunDeps(llm=llm, registry=registry, tool_runner=ToolRunner(registry, emit, Budgets()),
+    deps = RunDeps(llm=metered, registry=registry, tool_runner=ToolRunner(registry, emit, Budgets()),
                    emit=emit, budgets=Budgets(), now=lambda: datetime(2026, 9, 21, tzinfo=UTC),
-                   service_map="", notes=notes)
+                   service_map="", notes=notes, meter=meter)
     return deps, events, llm, gh
 
 
@@ -84,4 +89,5 @@ def initial_state(investigation_id="inv_1"):
     return {"workspace_id": "ws_1", "investigation_id": investigation_id,
             "incident": Incident(text="checkout slow after deploy", source="chat"),
             "capabilities": {}, "plan": None, "pending_tasks": [], "review_rounds": 0,
+            "context_saved_chars": 0,
             "followup_rounds": 0, "rca": None, "decision": None, "report_markdown": None}

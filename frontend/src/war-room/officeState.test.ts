@@ -155,3 +155,19 @@ test("tool arguments are shown readably", async () => {
   expect(readableArgs("{}")).toBe("");
   expect(readableArgs("{\"a\":1,\"b\":[1]}")).toBe("a 1 · b [1]");
 });
+
+test("run cost follows the usage events and keeps the compaction saving", () => {
+  seq = 0;
+  const state = run([
+    ev("llm_usage", "supervisor", { input_tokens: 1200, output_tokens: 90, cached_tokens: 0,
+      run_calls: 1, run_input_tokens: 1200, run_output_tokens: 90, run_saved_tokens: 0 }),
+    ev("context_compacted", "code", { saved_chars: 16000, saved_tokens: 4000 }),
+    ev("llm_usage", "code", { input_tokens: 5000, output_tokens: 110, cached_tokens: 3000,
+      run_calls: 2, run_input_tokens: 6200, run_output_tokens: 200, run_saved_tokens: 4000 }),
+  ]);
+  expect(state.cost).toEqual({ calls: 2, inputTokens: 6200, outputTokens: 200, cachedTokens: 3000, savedTokens: 4000 });
+});
+
+test("an investigation with no model calls has no cost", () => {
+  expect(run([]).cost.calls).toBe(0);
+});

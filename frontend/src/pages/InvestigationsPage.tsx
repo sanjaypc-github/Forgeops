@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { listInvestigations } from "../api/investigations";
+import type { RunUsage } from "../api/types";
+
+/** Total tokens an investigation spent, e.g. "124.0k"; "—" while nothing has been spent. */
+function tokens(usage: RunUsage | null | undefined): string {
+  const total = (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0);
+  if (!total) return "—";
+  return total >= 1000 ? `${(total / 1000).toFixed(1)}k` : String(total);
+}
 
 export function InvestigationsPage() {
   const investigations = useQuery({ queryKey: ["investigations"], queryFn: listInvestigations });
@@ -16,12 +24,13 @@ export function InvestigationsPage() {
       {!!investigations.data?.length && (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Problem</th><th>Status</th><th>Started from</th><th>Started</th></tr></thead>
+            <thead><tr><th>Problem</th><th>Status</th><th>Tokens</th><th>Started from</th><th>Started</th></tr></thead>
             <tbody>
               {investigations.data.map((inv) => (
                 <tr key={inv.id}>
                   <td><Link to={`/investigations/${inv.id}`}>{inv.description}</Link></td>
                   <td><span className={`pill ${inv.status}`}>{inv.status.replace("_", " ")}</span></td>
+                  <td className="mono">{tokens(inv.usage)}</td>
                   <td>{inv.source}</td>
                   <td className="mono">{new Date(inv.created_at).toLocaleString()}</td>
                 </tr>

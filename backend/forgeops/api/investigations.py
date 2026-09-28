@@ -15,7 +15,8 @@ from forgeops.events.models import EventIn, EventType
 
 router = APIRouter(prefix="/investigations", tags=["investigations"])
 
-DETAIL_KEYS = ("plan", "evidence", "rca", "questions", "decision", "action_results", "errors", "warnings")
+DETAIL_KEYS = ("plan", "evidence", "rca", "questions", "decision", "action_results", "errors", "warnings",
+               "context_saved_chars")
 
 
 class InvestigationCreate(BaseModel):
@@ -36,6 +37,7 @@ class InvestigationOut(BaseModel):
     window_start: datetime | None
     window_end: datetime | None
     created_at: datetime
+    usage: dict[str, Any] | None = None  # model calls and tokens, in total and per desk
 
 
 class InvestigationDetailOut(InvestigationOut):

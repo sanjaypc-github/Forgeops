@@ -16,6 +16,14 @@ def render(name: str, **values: object) -> str:
     return load(name).format_map(values)
 
 
-def system(role: str, *, now: str, **values: object) -> str:
-    """The full system prompt for a role: common ground rules followed by the role instructions."""
-    return render("common", now=now) + "\n\n" + render(role, **values)
+def system(role: str, **values: object) -> str:
+    """The full system prompt for a role: common ground rules followed by the role instructions.
+
+    It must stay identical across a desk's turns so providers can cache the prefix; anything that
+    changes per call (the clock, the task) belongs in the first user message instead.
+    """
+    return render("common") + "\n\n" + render(role, **values)
+
+
+def now_line(now: str) -> str:
+    return f"Current time: {now} (UTC)."

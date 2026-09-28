@@ -131,3 +131,70 @@ async def test_ask_agent_routes_through_broker_and_answer_is_citable():
     assert {e.id for e in result.evidence} >= {"ev_colleague"}
     assert "ask_agent" in {t.name for t in llm.requests[0].tools}
     assert llm.requests[0].tools[-2].parameters["properties"]["agent"]["enum"] == ["code"]
+
+
+# ─── context discipline ──────────────────────────────────────────────────────────────────────────
+async def _compacting_loop(script, keep=1, big_chars=4000):
+    from forgeops.capabilities.models import ToolResult as TR
+
+    big = TR(ok=True, content="LOG " + "x" * big_chars)
+    conn = FakeConnector("con_sb", "supabase", [SLOW], {"supabase.slow_queries": big})
+    reg = await CapabilityRegistry.build([conn])
+    events, emit = collect_events()
+    budgets = Budgets(keep_full_tool_outputs=keep, collapsed_output_chars=100)
+    llm = ScriptedLLM(script)
+    loop = SpecialistLoop(llm=llm, agent=AgentId.database, registry=reg,
+                          tool_runner=ToolRunner(reg, emit, budgets), emit=emit, budgets=budgets,
+                          broker=None, max_tool_calls=8, seconds=30, colleagues=[])
+    return loop, llm, events
+
+
+async def test_older_tool_output_is_collapsed_but_still_citable():
+    ids: list[str] = []
+
+    def remember(req):
+        ids.append(_call_id(req.messages[-1]))
+        return call("supabase__slow_queries")
+
+    def submit(req):
+        ids.append(_call_id(req.messages[-1]))
+        # the newest result is whole, the older one is collapsed but keeps its call_id
+        older = next(m for m in req.messages if m.role == "tool" and 'collapsed="true"' in m.content)
+        assert ids[0] in older.content and "characters dropped" in older.content
+        assert len(older.content) < 400
+        whole = [m for m in req.messages if m.role == "tool" and 'collapsed="true"' not in m.content]
+        assert len(whole) == 1 and len(whole[0].content) > 4000
+        return call("submit_findings", summary="found", findings=[_finding(ids)])
+
+    loop, llm, events = await _compacting_loop(
+        {"specialist:database": [call("supabase__slow_queries"), remember, submit]}, keep=1)
+    result = await loop.run(TASK, INCIDENT, "plan")
+
+    assert result.error is None
+    assert result.evidence[0].tool_call_ids == ids  # both calls remain valid citations
+    assert result.saved_chars > 3500
+    compacted = next(e for e in events if e.type == "context_compacted")
+    assert compacted.agent == "database" and compacted.data["saved_tokens"] > 800
+
+
+async def test_nothing_is_collapsed_while_it_still_fits_the_keep_window():
+    def submit(req):
+        assert not any('collapsed="true"' in m.content for m in req.messages)
+        return call("submit_findings", summary="found", findings=[_finding([_call_id(req.messages[-1])])])
+
+    loop, llm, events = await _compacting_loop(
+        {"specialist:database": [call("supabase__slow_queries"), submit]}, keep=3)
+    result = await loop.run(TASK, INCIDENT, "plan")
+    assert result.saved_chars == 0
+    assert not [e for e in events if e.type == "context_compacted"]
+
+
+async def test_the_system_prompt_is_identical_across_turns_so_it_can_be_cached():
+    loop, llm, events = await _compacting_loop({"specialist:database": [
+        call("supabase__slow_queries"),
+        lambda req: call("submit_findings", summary="s", findings=[_finding([_call_id(req.messages[-1])])]),
+    ]}, keep=3)
+    await loop.run(TASK, INCIDENT, "plan")
+    systems = {r.system for r in llm.requests}
+    assert len(systems) == 1 and "Current time" not in systems.pop()
+    assert "Current time" in llm.requests[0].messages[0].content

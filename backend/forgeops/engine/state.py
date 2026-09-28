@@ -21,6 +21,7 @@ class InvestigationState(TypedDict):
     questions: Annotated[list[AgentQuestion], operator.add]
     errors: Annotated[list[AgentError], operator.add]
     warnings: Annotated[list[str], operator.add]
+    context_saved_chars: Annotated[int, operator.add]  # tool output the desks did not resend
     review_rounds: int
     followup_rounds: int
     rca: RCA | None

@@ -499,6 +499,15 @@ DATABASE_URL                 # Supabase Postgres (session pooler or direct), pos
 OPENROUTER_API_KEY
 FORGEOPS_MODEL_SUPERVISOR, FORGEOPS_MODEL_SPECIALIST, FORGEOPS_MODEL_RCA
 KNOWLEDGE_DATA_DIR           # local folder for the Chroma index
+KNOWLEDGE_VAULT_ROOTS        # folders a knowledge connection may point at
+
+# Budgets and context discipline (defaults suit slow free models)
+FORGEOPS_SPECIALIST_SECONDS  # 300   time one desk may spend on a task
+FORGEOPS_ANSWER_SECONDS      # 90    time to answer a colleague's question
+FORGEOPS_RUN_SECONDS         # 1800  whole investigation
+FORGEOPS_TOOL_OUTPUT_CHARS   # 8000  default cap per tool result (a tool may set its own)
+FORGEOPS_KEEP_FULL_TOOL_OUTPUTS  # 3 recent results kept whole; older ones collapse to their opening
+FORGEOPS_PROMPT_CACHE        # false; true on paid models that cache the prompt prefix
 ```
 
 Connector tokens are entered in the Connectors page, not in `.env`.

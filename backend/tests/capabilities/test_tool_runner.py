@@ -61,3 +61,25 @@ async def test_large_output_is_truncated_and_marked():
                                       arguments={}, allowed={"supabase.get_logs"})
     assert result.truncated and record.truncated and len(result.content) < 1200
     assert "truncated" in result.content
+
+
+async def test_a_tool_may_cap_its_own_output_below_the_run_budget():
+    chatty = LOGS.model_copy(update={"name": "supabase.list_branches", "max_output_chars": 50})
+    conn = FakeConnector("con_sb", "supabase", [chatty],
+                         {"supabase.list_branches": ToolResult(ok=True, content="b" * 900)})
+    reg = await CapabilityRegistry.build([conn])
+    events, emit = collect_events()
+    runner = ToolRunner(reg, emit, Budgets(tool_output_chars=8000))
+
+    result, record = await runner.run(agent=AgentId.code, tool_name="supabase.list_branches",
+                                      arguments={}, allowed={"supabase.list_branches"})
+    assert result.truncated and record.truncated
+    assert len(result.content) < 200 and "truncated 850 characters" in result.content
+
+
+async def test_a_tool_without_its_own_cap_uses_the_run_budget():
+    runner, events, _ = await _runner(ToolResult(ok=True, content="y" * 500),
+                                      budgets=Budgets(tool_output_chars=100))
+    result, _ = await runner.run(agent=AgentId.observability, tool_name="supabase.get_logs",
+                                 arguments={}, allowed={"supabase.get_logs"})
+    assert result.truncated and "truncated 400 characters" in result.content

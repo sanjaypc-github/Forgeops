@@ -110,3 +110,31 @@ async def test_no_connectors_goes_straight_to_report():
     assert final.next == () and llm.requests == []
     assert "No root cause was determined" in final.values["report_markdown"]
     assert events[-1].type == "investigation_completed"
+
+
+async def test_the_run_reports_what_each_desk_spent():
+    from forgeops.engine.llm.metering import UsageMeter
+
+    meter = UsageMeter()
+    deps, events, llm, _ = await make_deps(script(), meter=meter)
+    # every scripted reply carries the same made-up usage
+    original = llm.complete
+
+    async def with_usage(request):
+        reply = await original(request)
+        return reply.model_copy(update={"input_tokens": 1000, "output_tokens": 100})
+
+    llm.complete = with_usage
+    graph = build_graph(deps, InMemorySaver())
+    config = {"configurable": {"thread_id": "inv_usage"}}
+    await graph.ainvoke(initial_state(), config)
+    state = await graph.ainvoke(
+        Command(resume={"kind": "reject", "decided_by": "u", "channel": "web"}), config)
+
+    assert meter.usage.calls >= 5 and meter.usage.input_tokens == meter.usage.calls * 1000
+    assert {"supervisor", "code", "knowledge", "rca"} <= set(meter.usage.by_agent)
+    assert "## Run cost" in state["report_markdown"]
+    assert f"{meter.usage.calls} model calls" in state["report_markdown"]
+    usage_events = [e for e in events if e.type == "llm_usage"]
+    assert len(usage_events) == meter.usage.calls
+    assert usage_events[-1].data["run_input_tokens"] == meter.usage.input_tokens

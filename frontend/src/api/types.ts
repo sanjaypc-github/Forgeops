@@ -16,6 +16,7 @@ export interface Investigation {
   window_start: string | null;
   window_end: string | null;
   created_at: string;
+  usage?: RunUsage | null;
 }
 
 export type EventType =
@@ -24,7 +25,8 @@ export type EventType =
   | "agent_completed" | "agent_question" | "agent_answer" | "agent_question_failed" | "chat_message"
   | "review_completed" | "rca_started" | "rca_completed"
   | "approval_requested" | "approval_granted" | "approval_rejected" | "action_started"
-  | "action_completed" | "report_ready" | "investigation_completed" | "investigation_failed";
+  | "action_completed" | "report_ready" | "investigation_completed" | "investigation_failed"
+  | "llm_usage" | "context_compacted";
 
 export interface InvestigationEvent {
   seq: number;
@@ -38,6 +40,15 @@ export interface InvestigationEvent {
 export type AgentId =
   | "supervisor" | "code" | "frontend_hosting" | "backend_services" | "database"
   | "observability" | "knowledge" | "rca" | "action";
+
+export interface RunUsage {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  saved_tokens: number;
+  by_agent: Record<string, { calls: number; input_tokens: number; output_tokens: number }>;
+}
 
 export interface Desk {
   id: AgentId;

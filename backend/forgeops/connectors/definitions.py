@@ -28,6 +28,8 @@ class ToolMapping(BaseModel):
     defaults: dict[str, str] = Field(default_factory=dict)
     # Always applied, whatever the model sends (e.g. {"method": "create"}).
     fixed: dict[str, Any] = Field(default_factory=dict)
+    # Output cap for this tool; a log query earns more room than a list of branches.
+    max_output_chars: int | None = None
 
 
 class ConnectorDefinition(BaseModel):
@@ -70,9 +72,11 @@ KNOWLEDGE = ConnectorDefinition(
 _REPO_DEFAULTS = {"owner": "{owner}", "repo": "{repo}"}
 
 
-def _gh(upstream: str, capability: Capability, description: str, repo_scoped: bool = True) -> ToolMapping:
+def _gh(upstream: str, capability: Capability, description: str, repo_scoped: bool = True,
+        chars: int | None = None) -> ToolMapping:
     return ToolMapping(upstream=upstream, name=f"github.{upstream}", capability=capability, permission="read",
-                       description=description, defaults=_REPO_DEFAULTS if repo_scoped else {})
+                       description=description, defaults=_REPO_DEFAULTS if repo_scoped else {},
+                       max_output_chars=chars)
 
 
 GITHUB = ConnectorDefinition(
@@ -107,23 +111,23 @@ GITHUB = ConnectorDefinition(
         "Optional: Issues read and write, only if you want ForgeOps to open issues after approval.",
     ],
     tools=[
-        _gh("list_commits", Capability.code, "List recent commits in the repository (newest first)."),
-        _gh("get_commit", Capability.code, "Show one commit with its changed files and diff."),
-        _gh("get_file_contents", Capability.code, "Read a file or directory at a branch, tag or commit."),
-        _gh("list_branches", Capability.code, "List the repository's branches."),
+        _gh("list_commits", Capability.code, "List recent commits in the repository (newest first).", chars=4000),
+        _gh("get_commit", Capability.code, "Show one commit with its changed files and diff.", chars=10000),
+        _gh("get_file_contents", Capability.code, "Read a file or directory at a branch, tag or commit.", chars=12000),
+        _gh("list_branches", Capability.code, "List the repository's branches.", chars=2000),
         _gh("search_code", Capability.code, "Search code with GitHub code search; include repo:owner/name in the query.",
-            repo_scoped=False),
-        _gh("list_pull_requests", Capability.code, "List pull requests, e.g. recently merged ones."),
-        _gh("pull_request_read", Capability.code, "Read one pull request: details, diff, files, reviews or comments."),
+            repo_scoped=False, chars=6000),
+        _gh("list_pull_requests", Capability.code, "List pull requests, e.g. recently merged ones.", chars=4000),
+        _gh("pull_request_read", Capability.code, "Read one pull request: details, diff, files, reviews or comments.", chars=12000),
         _gh("search_pull_requests", Capability.code, "Search pull requests; include repo:owner/name in the query.",
-            repo_scoped=False),
-        _gh("list_issues", Capability.code, "List issues, e.g. recently opened bug reports."),
-        _gh("issue_read", Capability.code, "Read one issue with its comments."),
-        _gh("search_issues", Capability.code, "Search issues; include repo:owner/name in the query.", repo_scoped=False),
-        _gh("list_releases", Capability.hosting, "List releases and their dates."),
-        _gh("actions_list", Capability.hosting, "List workflows, workflow runs and their jobs (deploys and CI)."),
-        _gh("actions_get", Capability.hosting, "Get one workflow, run or job in detail."),
-        _gh("get_job_logs", Capability.hosting, "Read the logs of a failed Actions job or run."),
+            repo_scoped=False, chars=4000),
+        _gh("list_issues", Capability.code, "List issues, e.g. recently opened bug reports.", chars=4000),
+        _gh("issue_read", Capability.code, "Read one issue with its comments.", chars=8000),
+        _gh("search_issues", Capability.code, "Search issues; include repo:owner/name in the query.", repo_scoped=False, chars=4000),
+        _gh("list_releases", Capability.hosting, "List releases and their dates.", chars=2000),
+        _gh("actions_list", Capability.hosting, "List workflows, workflow runs and their jobs (deploys and CI).", chars=6000),
+        _gh("actions_get", Capability.hosting, "Get one workflow, run or job in detail.", chars=6000),
+        _gh("get_job_logs", Capability.hosting, "Read the logs of a failed Actions job or run.", chars=16000),
         ToolMapping(upstream="issue_write", name="github.create_issue", capability=Capability.write,
                     permission="write", description="Open a GitHub issue (only after human approval).",
                     defaults=_REPO_DEFAULTS, fixed={"method": "create"}),
@@ -131,9 +135,9 @@ GITHUB = ConnectorDefinition(
 )
 
 
-def _sb(upstream: str, capability: Capability, description: str) -> ToolMapping:
+def _sb(upstream: str, capability: Capability, description: str, chars: int | None = None) -> ToolMapping:
     return ToolMapping(upstream=upstream, name=f"supabase.{upstream}", capability=capability, permission="read",
-                       description=description)
+                       description=description, max_output_chars=chars)
 
 
 # Never exposed: get_publishable_keys, generate_typescript_types, search_docs, get_project_url, list_branches.
@@ -160,14 +164,14 @@ SUPABASE = ConnectorDefinition(
         "ForgeOps starts the official Supabase MCP server with --read-only and --project-ref, so SQL cannot change data.",
     ],
     tools=[
-        _sb("list_tables", Capability.database, "List tables with columns, keys and row-level security status."),
-        _sb("list_extensions", Capability.database, "List installed Postgres extensions."),
-        _sb("list_migrations", Capability.database, "List applied migrations with versions (recent schema changes)."),
-        _sb("execute_sql", Capability.database, "Run a read-only SQL query (SELECT only)."),
-        _sb("get_advisors", Capability.database, "Security and performance advisor notices (missing RLS, slow indexes)."),
-        _sb("query_logs", Capability.logs, "Query recent logs of a service: api, postgres, edge-function, auth, storage, realtime."),
-        _sb("list_edge_functions", Capability.backend, "List deployed edge functions and their versions."),
-        _sb("get_edge_function", Capability.backend, "Read the source of a deployed edge function."),
+        _sb("list_tables", Capability.database, "List tables with columns, keys and row-level security status.", chars=12000),
+        _sb("list_extensions", Capability.database, "List installed Postgres extensions.", chars=2000),
+        _sb("list_migrations", Capability.database, "List applied migrations with versions (recent schema changes).", chars=4000),
+        _sb("execute_sql", Capability.database, "Run a read-only SQL query (SELECT only).", chars=10000),
+        _sb("get_advisors", Capability.database, "Security and performance advisor notices (missing RLS, slow indexes).", chars=8000),
+        _sb("query_logs", Capability.logs, "Query recent logs of a service: api, postgres, edge-function, auth, storage, realtime.", chars=16000),
+        _sb("list_edge_functions", Capability.backend, "List deployed edge functions and their versions.", chars=4000),
+        _sb("get_edge_function", Capability.backend, "Read the source of a deployed edge function.", chars=12000),
     ],
 )
 

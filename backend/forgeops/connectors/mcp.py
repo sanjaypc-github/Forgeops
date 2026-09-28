@@ -161,6 +161,7 @@ class McpConnector:
             name=mapping.name, description=mapping.description or description or mapping.name,
             capability=mapping.capability, permission=mapping.permission, input_schema=schema,
             connection_id=self.connection_id, connector_type=self.connector_type,
+            max_output_chars=mapping.max_output_chars,
         )
 
     async def _offered(self) -> dict[str, Any]:

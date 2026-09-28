@@ -13,6 +13,8 @@ class ToolSpec(BaseModel):
     input_schema: dict[str, Any]
     connection_id: str
     connector_type: str
+    # How much of this tool's output an agent may read; None uses the run's default budget.
+    max_output_chars: int | None = None
 
     @model_validator(mode="after")
     def _write_iff_write_capability(self) -> "ToolSpec":

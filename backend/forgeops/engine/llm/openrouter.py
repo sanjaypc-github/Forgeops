@@ -59,9 +59,11 @@ class OpenRouterLLM:
         timeout: float = 120,
         client: AsyncOpenAI | None = None,
         retry_delay: float = 2.0,
+        prompt_cache: bool = False,
     ) -> None:
         self._models = dict(models)
         self._retry_delay = retry_delay
+        self._prompt_cache = prompt_cache
         self._client = client or AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -79,12 +81,20 @@ class OpenRouterLLM:
             api_key=key.strip(),
             models={role: settings.model_for(role) for role in MODEL_ROLES},
             base_url=settings.openrouter_base_url,
+            prompt_cache=settings.forgeops_prompt_cache,
         )
+
+    def _system_message(self, system: str) -> dict[str, Any]:
+        """The system prompt is identical across a desk's turns, so it is the cache breakpoint."""
+        if not self._prompt_cache:
+            return {"role": "system", "content": system}
+        return {"role": "system", "content": [
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]}
 
     async def complete(self, request: LLMRequest) -> LLMReply:
         params: dict[str, Any] = {
             "model": self._models[request.model_role],
-            "messages": [{"role": "system", "content": request.system}]
+            "messages": [self._system_message(request.system)]
             + [_to_openai(m) for m in request.messages],
             "max_tokens": request.max_tokens,
         }
@@ -114,6 +124,7 @@ class OpenRouterLLM:
                            " (the model provider may be overloaded; try again or use another model)"))
         message = response.choices[0].message
         usage = response.usage
+        details = getattr(usage, "prompt_tokens_details", None) if usage else None
         return LLMReply(
             text=message.content or "",
             tool_calls=[
@@ -122,4 +133,5 @@ class OpenRouterLLM:
             ],
             input_tokens=usage.prompt_tokens if usage else 0,
             output_tokens=usage.completion_tokens if usage else 0,
+            cached_tokens=getattr(details, "cached_tokens", 0) or 0,
         )

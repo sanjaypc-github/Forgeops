@@ -13,6 +13,7 @@ from forgeops.capabilities.registry import CapabilityRegistry
 from forgeops.capabilities.runner import ToolRunner
 from forgeops.engine.budgets import Budgets
 from forgeops.engine.llm.base import LLM
+from forgeops.engine.llm.metering import UsageMeter
 from forgeops.engine.models import (
     ActionResult, AgentError, AgentId, AgentTask, Decision, Incident, ToolCallRecord,
 )
@@ -39,6 +40,7 @@ class RunDeps:
     now: Callable[[], datetime]
     service_map: str
     notes: Callable[[], Awaitable[list[str]]]
+    meter: UsageMeter | None = None  # token accounting for the report and the War Room
 
 
 def build_graph(deps: RunDeps, checkpointer):
@@ -93,9 +95,12 @@ def build_graph(deps: RunDeps, checkpointer):
         loop = make_loop(agent, broker=broker, max_calls=deps.budgets.specialist_tool_calls,
                          seconds=deps.budgets.specialist_seconds, purpose="specialist", announce=True)
         result = await loop.run(payload["task"], payload["incident"], payload["plan_summary"])
+        if deps.meter is not None and result.saved_chars:
+            deps.meter.record_saved(agent.value, result.saved_chars // 4)
         return {
             "evidence": result.evidence, "tool_calls": result.tool_calls, "questions": result.questions,
             "errors": [AgentError(agent=agent, message=result.error)] if result.error else [],
+            "context_saved_chars": result.saved_chars,
         }
 
     async def review_node(state: InvestigationState) -> dict:
@@ -186,7 +191,7 @@ def build_graph(deps: RunDeps, checkpointer):
         return {"action_results": results, "tool_calls": records}
 
     async def report_node(state: InvestigationState) -> dict:
-        markdown = render_report(state)
+        markdown = render_report(state, usage=deps.meter.usage if deps.meter else None)
         decision = state.get("decision")
         status = "rejected" if decision and decision.kind == "reject" else "completed"
         await emit(EventIn(type=EventType.report_ready, agent=AgentId.supervisor.value, data={}))

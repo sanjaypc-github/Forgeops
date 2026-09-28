@@ -16,6 +16,7 @@ from forgeops.db.session import SessionFactory
 from forgeops.engine.budgets import Budgets
 from forgeops.engine.graph import RunDeps, build_graph
 from forgeops.engine.llm.base import LLM, LLMNotConfigured
+from forgeops.engine.llm.metering import MeteredLLM, UsageMeter, merge_usage
 from forgeops.engine.models import Decision, Incident
 from forgeops.events.bus import EventBus
 from forgeops.events.models import EventIn, EventType
@@ -86,15 +87,17 @@ class InvestigationRunner:
             return await self._bus.emit(inv.workspace_id, inv.id, event)
 
         registry: CapabilityRegistry | None = None
+        meter = UsageMeter(emit)
         try:
-            llm = self._llm_factory()
+            llm = MeteredLLM(self._llm_factory(), meter)
             registry = await self._registry_factory(inv.workspace_id)
 
             async def notes() -> list[str]:
                 return await self._user_notes(inv.id)
 
             deps = RunDeps(llm=llm, registry=registry, tool_runner=ToolRunner(registry, emit, self._budgets),
-                           emit=emit, budgets=self._budgets, now=self._now, service_map=registry.service_map, notes=notes)
+                           emit=emit, budgets=self._budgets, now=self._now,
+                           service_map=registry.service_map, notes=notes, meter=meter)
             graph = build_graph(deps, self._checkpointer)
             config = self._config(inv.id)
             async with asyncio.timeout(self._budgets.run_seconds):
@@ -122,8 +125,18 @@ class InvestigationRunner:
             await self._set_status(inv.id, "failed")
             await emit(EventIn(type=EventType.investigation_failed, data={"reason": reason}))
         finally:
+            await self._store_usage(inv.id, meter)
             if registry is not None:
                 await registry.aclose()
+
+    async def _store_usage(self, investigation_id: str, meter: UsageMeter) -> None:
+        if not meter.usage.calls:
+            return
+        async with self._sf() as session:
+            inv = await session.get(Investigation, investigation_id)
+            if inv is not None:
+                inv.usage = merge_usage(inv.usage, meter.snapshot())
+                await session.commit()
 
     @staticmethod
     def _initial_state(inv: Investigation) -> dict:
@@ -132,6 +145,7 @@ class InvestigationRunner:
             "incident": Incident(text=inv.description, source="chat" if inv.source == "chat" else "web",
                                  window_start=inv.window_start, window_end=inv.window_end),
             "capabilities": {}, "plan": None, "pending_tasks": [], "review_rounds": 0,
+            "context_saved_chars": 0,
             "followup_rounds": 0, "rca": None, "decision": None, "report_markdown": None,
         }
 
