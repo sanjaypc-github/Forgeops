@@ -5,8 +5,10 @@ started it. Pending consents live in memory with a short life: a restart simply 
 again, which is safer than storing half-finished authorizations.
 """
 
+import json
 import secrets
 from dataclasses import dataclass, field
+from html import escape
 from datetime import UTC, datetime, timedelta
 
 import httpx2
@@ -84,18 +86,29 @@ def _redirect_uri(request: Request) -> str:
     return str(request.base_url).rstrip("/") + CALLBACK_PATH
 
 
-def _page(title: str, message: str, ok: bool) -> HTMLResponse:
-    """A tiny self-contained page: the consent window shows it and closes itself."""
+def _openers(request: Request) -> list[str]:
+    """Origins allowed to receive the result: the configured app origins, never a wildcard."""
+    configured = [o for o in (request.app.state.settings.cors_origins or []) if o and o != "*"]
+    return configured or [str(request.base_url).rstrip("/")]
+
+
+def _page(title: str, message: str, ok: bool, request: Request) -> HTMLResponse:
+    """A tiny self-contained page: the consent window shows it and closes itself.
+
+    Everything shown here can come from the provider's query string, so every value is escaped and
+    the result is posted only to the app's own origins.
+    """
     colour = "#2e7d4f" if ok else "#b3261e"
+    payload = json.dumps({"source": "forgeops-oauth", "ok": ok})
+    origins = json.dumps(_openers(request))
     return HTMLResponse(
         "<!doctype html><meta charset='utf-8'><title>ForgeOps</title>"
         "<body style=\"font:16px/1.5 system-ui;margin:0;display:grid;place-items:center;height:100vh\">"
-        f"<main style='text-align:center;max-width:36rem;padding:24px'>"
-        f"<h1 style='color:{colour};font-size:1.25rem'>{title}</h1><p>{message}</p>"
+        "<main style='text-align:center;max-width:36rem;padding:24px'>"
+        f"<h1 style='color:{colour};font-size:1.25rem'>{escape(title)}</h1><p>{escape(message)}</p>"
         "<p style='color:#6b746f'>You can close this window.</p></main>"
-        "<script>try{window.opener&&window.opener.postMessage("
-        f"{{source:'forgeops-oauth',ok:{str(ok).lower()}}},'*');setTimeout(()=>window.close(),1200)}}catch(e){{}}"
-        "</script></body>",
+        "<script>try{for(const o of " + origins + "){window.opener&&window.opener.postMessage("
+        + payload + ",o)}setTimeout(()=>window.close(),1200)}catch(e){}</script></body>",
         status_code=200 if ok else 400,
     )
 
@@ -144,14 +157,14 @@ async def oauth_callback(request: Request, code: str = "", state: str = "", erro
                          error_description: str = "",
                          user: CurrentUser = Depends(current_user)) -> HTMLResponse:
     if error:
-        return _page("Access was not granted", error_description or error, ok=False)
+        return _page("Access was not granted", error_description or error, ok=False, request=request)
     pending = consents(request).take(state)
     if pending is None or not code:
         return _page("That approval has expired", "Start the connection again from the Connectors page.",
-                     ok=False)
+                     ok=False, request=request)
     if pending.workspace_id != user.workspace_id:
         log.warning("oauth.workspace_mismatch", connection_id=pending.connection_id)
-        return _page("That approval belongs to another workspace", "Nothing was connected.", ok=False)
+        return _page("That approval belongs to another workspace", "Nothing was connected.", ok=False, request=request)
 
     app_state = request.app.state
     try:
@@ -161,13 +174,13 @@ async def oauth_callback(request: Request, code: str = "", state: str = "", erro
                                          client=client, client_secret=pending.client_secret)
     except OAuthError as exc:
         await _record_failure(app_state, pending.connection_id, str(exc))
-        return _page("The provider refused the connection", str(exc), ok=False)
+        return _page("The provider refused the connection", str(exc), ok=False, request=request)
 
     session = OAuthSession.build(pending.server, pending.client_id, pending.client_secret, tokens)
     async with app_state.session_factory() as db:
         row = await db.get(Connection, pending.connection_id)
         if row is None:
-            return _page("That connection was removed", "Start again from the Connectors page.", ok=False)
+            return _page("That connection was removed", "Start again from the Connectors page.", ok=False, request=request)
         row.secret_encrypted = app_state.secret_box.encrypt_json({OAUTH_KEY: session.dump()})
         row.status, row.last_error = "connected", None
         await db.commit()
@@ -184,7 +197,7 @@ async def oauth_callback(request: Request, code: str = "", state: str = "", erro
         await db.commit()
     log.info("oauth.completed", connection_id=row.id, ok=health.ok)
     return _page(f"{row.name} is connected" if health.ok else f"{row.name} needs attention",
-                 health.detail, ok=health.ok)
+                 health.detail, ok=health.ok, request=request)
 
 
 async def _check(app_state, row: Connection):

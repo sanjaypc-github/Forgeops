@@ -169,3 +169,30 @@ def test_pending_consents_expire():
     store.items.update({"old": old, "fresh": fresh})
     assert store.take("old") is None
     assert store.take("fresh") is fresh and store.take("fresh") is None
+
+
+async def test_the_callback_page_escapes_what_the_provider_sent(auth_client):
+    """The provider controls these strings, so they must never reach the page as markup."""
+    payload = "<img src=x onerror=alert(1)>"
+    page = await auth_client.get("/api/connections/oauth/callback",
+                                 params={"error": "access_denied", "error_description": payload})
+    assert page.status_code == 400
+    assert payload not in page.text
+    assert "&lt;img src=x onerror=alert(1)&gt;" in page.text
+    # the result goes to the app's own origins, never a wildcard
+    assert "'*'" not in page.text and '"*"' not in page.text
+
+
+async def test_a_connection_name_is_escaped_on_the_result_page(
+        auth_client, app, oauth_connector, provider, monkeypatch):
+    async def health(app_state, row):
+        from forgeops.capabilities.models import HealthStatus
+        return HealthStatus(ok=True, detail="1 read tools available")
+
+    monkeypatch.setattr("forgeops.api.oauth_flow._check", health)
+    await auth_client.post("/api/connections/oauth/start",
+                           json={"type": "provider", "name": "<script>alert(1)</script>"})
+    state = next(iter(app.state.oauth_consents.items))
+    page = await auth_client.get(f"/api/connections/oauth/callback?code=c&state={state}")
+    assert "<script>alert(1)</script>" not in page.text
+    assert "&lt;script&gt;" in page.text
