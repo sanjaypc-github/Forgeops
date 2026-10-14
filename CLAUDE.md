@@ -159,11 +159,20 @@ Conventions that matter:
 4. A write tool needs `permission="write"`, `Capability.write`, an `allow_writes` config field, and a
    fixed argument set that the model cannot override.
 
-## 10. Current state (2026-09-28)
+## 9a. Writing the project report
+
+`docs/report/` is a self-contained pack for whoever writes the final-year project report: project
+overview, literature survey, architecture, module guide, data model, harness, API reference,
+frontend guide, testing, results, milestones, setup, limitations, glossary, and a 60-page chapter
+outline. Start at `docs/report/README.md`. Its rule is the project's rule: every number is tagged
+measured, computed or planned, and nothing is invented.
+
+## 10. Current state (2026-10-14)
 
 Done: foundation and auth; the engine and War Room; the Connectors page with Knowledge, GitHub and
 Supabase; token metering and context discipline; the OAuth connect flow.
 
-Next: Cloudflare and Sanity connectors (their tool names must be pinned against a live account),
-Sentry, the evaluation write-up in `docs/evaluation.md`, and the first live root-cause run.
+The ICSIE 2026 paper was presented. Next: pin Cloudflare, Sanity and Sentry tool names against
+live accounts, execute the evaluation protocol in `docs/report/10-results-and-measurements.md`, and
+run the first live root-cause investigation.
 `docs/superpowers/plans/` holds the per-milestone plans; read the newest one before starting work.
