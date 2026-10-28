@@ -199,23 +199,24 @@ CLOUDFLARE = ConnectorDefinition(
     status="available",
     transport="http",
     url="https://mcp.cloudflare.com/mcp?codemode=false",
-    headers={"Authorization": "Bearer {api_token}"},
-    auth="token",
+    # The server is an OAuth resource: its 401 advertises
+    # realm="OAuth", scope="user:read account:read", and it supports RFC 7591
+    # dynamic client registration. A Cloudflare API token is NOT an OAuth access
+    # token here and is always rejected, so this connector cannot use "token".
+    auth="oauth",
+    oauth_scopes=["account:read", "user:read", "offline_access"],
     context="Cloudflare account {account_id}: Pages deployments, build logs and zone analytics",
     docs_url="https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/",
     config_fields=[
         ConfigField(key="account_id", label="Account ID", placeholder="32-character account id",
                     pattern=r"[0-9a-f]{32}",
                     help="Cloudflare dashboard → Workers & Pages → the Account ID in the right sidebar."),
-        ConfigField(key="api_token", label="API token", secret=True, placeholder="…",
-                    help="A read-only token. ForgeOps never asks for write permissions."),
     ],
     setup_steps=[
-        "Cloudflare dashboard → My Profile → API Tokens → Create Token → Custom token.",
-        "Permissions (read only): Account → Cloudflare Pages → Read; Account → Workers Scripts → Read; "
-        "Zone → Analytics → Read.",
-        "Account Resources: include only the account holding this site.",
         "Copy the Account ID from Workers & Pages in the dashboard sidebar.",
+        "Press Connect. Cloudflare opens in a new window and asks you to approve ForgeOps.",
+        "ForgeOps requests read-only scopes (account:read, user:read) and no write access.",
+        "No API token is needed: this server does not accept one.",
     ],
     tools=[
         _cf("pages_projects_list", Capability.hosting, "List Cloudflare Pages projects in the account.", 4000),

@@ -4,14 +4,41 @@
     {
       "name": "forgeops-api",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["--directory", "backend", "run", "python", "-m", "forgeops.devtools.serve"],
+      "runtimeArgs": [
+        "--directory",
+        "backend",
+        "run",
+        "python",
+        "-m",
+        "forgeops.devtools.serve"
+      ],
       "port": 8000
     },
     {
       "name": "forgeops-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
       "port": 5173
+    },
+    {
+      "name": "campus-events",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "../campus-events",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
+      "port": 5174
     }
   ]
 }

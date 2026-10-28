@@ -27,16 +27,30 @@ def test_available_connectors_and_coming_soon():
 def test_cloudflare_disables_code_mode_and_stays_read_only():
     """Code Mode exposes only `search` and `execute`, and `execute` can call any Cloudflare API."""
     cf = CATALOG["cloudflare"]
-    assert cf.transport == "http" and cf.auth == "token"
-    assert cf.url == "https://mcp.cloudflare.com/mcp?codemode=false"
+    assert cf.transport == "http" and cf.url == "https://mcp.cloudflare.com/mcp?codemode=false"
     assert "codemode=false" in cf.url, "without this the agent gets an unrestricted execute tool"
-    assert cf.headers["Authorization"] == "Bearer {api_token}"
     assert all(m.permission == "read" for m in cf.tools)
     assert cf.supports_writes is False and cf.write_headers == {}
     assert {agent_for_capability(m.capability) for m in cf.tools} == {
         AgentId.frontend_hosting, AgentId.observability}
-    assert [f.key for f in cf.config_fields if f.secret] == ["api_token"]
     assert any("read" in step.lower() for step in cf.setup_steps)
+
+
+def test_cloudflare_authenticates_with_oauth_not_an_api_token():
+    """Verified against the live server on 2026-10-28.
+
+    An unauthenticated POST to the endpoint answers 401 with
+    `WWW-Authenticate: Bearer realm="OAuth", scope="user:read account:read"` and a
+    resource_metadata pointer, and the authorization server advertises a
+    registration_endpoint. A Cloudflare API token is a different credential and is
+    always rejected, so this connector must never ask the customer for one.
+    """
+    cf = CATALOG["cloudflare"]
+    assert cf.auth == "oauth"
+    assert cf.headers == {} and cf.write_headers == {}
+    assert [f.key for f in cf.config_fields if f.secret] == []
+    assert set(cf.oauth_scopes) == {"account:read", "user:read", "offline_access"}
+    assert not any("write" in scope for scope in cf.oauth_scopes)
 
 
 def test_cloudflare_tool_names_are_marked_unverified():
