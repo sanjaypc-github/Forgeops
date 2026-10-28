@@ -179,22 +179,37 @@ SUPABASE = ConnectorDefinition(
 )
 
 
-def _cf(upstream: str, capability: Capability, description: str, chars: int | None = None) -> ToolMapping:
-    return ToolMapping(upstream=upstream, name=f"cloudflare.{upstream}", capability=capability,
-                       permission="read", description=description, max_output_chars=chars)
+_CF_DEFAULTS = {"account_id": "{account_id}"}
+
+
+def _cf(upstream: str, name: str, capability: Capability, description: str,
+        chars: int | None = None) -> ToolMapping:
+    """Upstream names are the server's own; `name` is the short one the desks see.
+
+    Every endpoint is account-scoped, so account_id is filled from the connection rather
+    than left for the model to guess.
+    """
+    return ToolMapping(upstream=upstream, name=f"cloudflare.{name}", capability=capability,
+                       permission="read", description=description, defaults=_CF_DEFAULTS,
+                       max_output_chars=chars)
 
 
 # Cloudflare's hosted MCP server defaults to "Code Mode", which exposes only `search` and `execute` —
 # and `execute` can call any Cloudflare API, including destructive ones. `codemode=false` makes the
 # server register each endpoint as its own tool, so the allowlist below is meaningful.
 #
-# UNVERIFIED TOOL NAMES: unlike GitHub and Supabase, these were not yet listed against a live
-# account. Run `python -m forgeops.devtools.mcp_tools <connection-id>` after connecting, then pin the
-# real names here and in tests/connectors/test_catalog.py with the verification date.
+# Tool names verified against a live account on 2026-10-28 with
+# `python -m forgeops.devtools.mcp_tools`. With Code Mode off the server registers one tool per REST
+# endpoint: 3804 of them, 1852 readable and the rest writing (put_*, post_*, delete_*). The allowlist
+# below is what keeps that surface away from the desks.
+#
+# Workers, not Pages: a Vite build served by Workers Static Assets deploys through Workers Builds, so
+# deployment history and build logs live under /accounts/{account_id}/builds/..., not under /pages/.
+# The Pages tools are kept for customers who do use Pages.
 CLOUDFLARE = ConnectorDefinition(
     type="cloudflare",
     display_name="Cloudflare",
-    description="Pages deployments and build logs, Workers, and zone analytics for one account.",
+    description="Workers and Pages deployments, build logs and runtime errors for one account.",
     agents=[AgentId.frontend_hosting, AgentId.observability],
     status="available",
     transport="http",
@@ -208,7 +223,7 @@ CLOUDFLARE = ConnectorDefinition(
     # token here and is always rejected, so this connector cannot use "token".
     auth="oauth",
     oauth_scopes=["account:read", "user:read", "offline_access"],
-    context="Cloudflare account {account_id}: Pages deployments, build logs and zone analytics",
+    context="Cloudflare account {account_id}: Workers and Pages deployments, build logs, runtime errors",
     docs_url="https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/",
     config_fields=[
         ConfigField(key="account_id", label="Account ID", placeholder="32-character account id",
@@ -222,17 +237,35 @@ CLOUDFLARE = ConnectorDefinition(
         "No API token is needed: this server does not accept one.",
     ],
     tools=[
-        _cf("pages_projects_list", Capability.hosting, "List Cloudflare Pages projects in the account.", 4000),
-        _cf("pages_deployments_list", Capability.hosting,
-            "List recent deployments of a Pages project, newest first, with status and commit.", 8000),
-        _cf("pages_deployment_get", Capability.hosting,
-            "Get one deployment: trigger, commit, stages and outcome.", 8000),
-        _cf("pages_deployment_logs", Capability.hosting,
-            "Read the build and deploy logs of one Pages deployment.", 16000),
-        _cf("workers_list", Capability.hosting, "List Workers scripts in the account.", 4000),
-        _cf("zones_list", Capability.hosting, "List zones (domains) in the account.", 2000),
-        _cf("analytics_get", Capability.metrics,
-            "Request and error counts for a zone over a time window.", 8000),
+        # what exists and what shape it is in
+        _cf("get_accounts_workers_scripts", "workers_list", Capability.hosting,
+            "List the Workers in the account, with their modified dates.", 4000),
+        _cf("get_accounts_workers_scripts_by_script_name", "worker_get", Capability.hosting,
+            "Get one Worker: its handlers, bindings, usage model and last modification.", 6000),
+        # what shipped, and when: the question every deploy-related incident starts with
+        _cf("get_accounts_workers_scripts_deployments", "worker_deployments", Capability.hosting,
+            "List a Worker's deployments, newest first, with their versions and timestamps.", 8000),
+        _cf("get_accounts_workers_scripts_versions", "worker_versions", Capability.hosting,
+            "List a Worker's versions with the commit and message each was built from.", 8000),
+        # why a deploy failed, in Cloudflare's own words
+        _cf("get_accounts_builds_workers_builds", "worker_builds", Capability.hosting,
+            "List the Workers Builds runs for one Worker, newest first, with status and commit.", 8000),
+        _cf("get_accounts_builds_builds_by_build_uuid", "build_get", Capability.hosting,
+            "Get one build: trigger, commit, stages and outcome.", 8000),
+        _cf("get_accounts_builds_builds_logs", "build_logs", Capability.hosting,
+            "Read the build and deploy logs of one Workers Builds run.", 16000),
+        # what broke at runtime after it shipped
+        _cf("get_accounts_workers_observability_issues", "worker_issues", Capability.errors,
+            "List runtime errors Workers Observability has grouped for this account.", 10000),
+        _cf("get_accounts_workers_observability_issues_summary", "worker_issues_summary",
+            Capability.metrics, "Counts of runtime issues over a time window.", 4000),
+        # Pages, for customers who deploy that way instead
+        _cf("get_accounts_pages_projects", "pages_projects", Capability.hosting,
+            "List Cloudflare Pages projects in the account.", 4000),
+        _cf("get_accounts_pages_projects_deployments", "pages_deployments", Capability.hosting,
+            "List a Pages project's deployments, newest first, with status and commit.", 8000),
+        _cf("get_accounts_pages_projects_deployments_history_logs", "pages_deployment_logs",
+            Capability.hosting, "Read the build logs of one Pages deployment.", 16000),
     ],
 )
 

@@ -57,14 +57,49 @@ def test_cloudflare_authenticates_with_oauth_not_an_api_token():
     assert not any("write" in scope for scope in cf.oauth_scopes)
 
 
-def test_cloudflare_tool_names_are_marked_unverified():
-    """Upstream names must be listed against a live account before they are trusted.
+def test_cloudflare_tool_names_are_the_ones_the_server_offers():
+    """Pinned from a live listing on 2026-10-28 (devtools.mcp_tools).
 
-    Run `python -m forgeops.devtools.mcp_tools <connection-id>` after connecting, then replace this
-    test with pinned names and the verification date, as GitHub and Supabase have.
+    With codemode=false the server names one tool per REST endpoint, so every upstream
+    name is a get_* path. A name that is not a get_* is either invented or a write.
     """
+    cf = CATALOG["cloudflare"]
+    upstream = {m.upstream for m in cf.tools}
+    assert upstream == {
+        "get_accounts_workers_scripts",
+        "get_accounts_workers_scripts_by_script_name",
+        "get_accounts_workers_scripts_deployments",
+        "get_accounts_workers_scripts_versions",
+        "get_accounts_builds_workers_builds",
+        "get_accounts_builds_builds_by_build_uuid",
+        "get_accounts_builds_builds_logs",
+        "get_accounts_workers_observability_issues",
+        "get_accounts_workers_observability_issues_summary",
+        "get_accounts_pages_projects",
+        "get_accounts_pages_projects_deployments",
+        "get_accounts_pages_projects_deployments_history_logs",
+    }
+    assert all(name.startswith("get_") for name in upstream), "only read endpoints belong here"
     source = Path(__file__).resolve().parents[2] / "forgeops" / "connectors" / "definitions.py"
-    assert "UNVERIFIED TOOL NAMES" in source.read_text(encoding="utf-8")
+    assert "UNVERIFIED TOOL NAMES" not in source.read_text(encoding="utf-8")
+
+
+def test_cloudflare_covers_workers_builds_not_only_pages():
+    """A Vite build on Workers Static Assets deploys through Workers Builds.
+
+    Allowlisting only the Pages endpoints would send the Hosting desk to the wrong
+    product and it would find nothing about the site under investigation.
+    """
+    cf = CATALOG["cloudflare"]
+    upstream = {m.upstream for m in cf.tools}
+    assert any("builds_logs" in name for name in upstream), "no build logs for a Worker"
+    assert any("workers_scripts_deployments" in name for name in upstream)
+
+
+def test_cloudflare_fills_the_account_id_itself():
+    """Every endpoint is account-scoped; the model must not be left to guess the id."""
+    cf = CATALOG["cloudflare"]
+    assert all(m.defaults == {"account_id": "{account_id}"} for m in cf.tools)
 
 
 def test_oauth_connectors_actually_send_the_token_they_obtain():
