@@ -179,14 +179,66 @@ SUPABASE = ConnectorDefinition(
 )
 
 
+def _cf(upstream: str, capability: Capability, description: str, chars: int | None = None) -> ToolMapping:
+    return ToolMapping(upstream=upstream, name=f"cloudflare.{upstream}", capability=capability,
+                       permission="read", description=description, max_output_chars=chars)
+
+
+# Cloudflare's hosted MCP server defaults to "Code Mode", which exposes only `search` and `execute` —
+# and `execute` can call any Cloudflare API, including destructive ones. `codemode=false` makes the
+# server register each endpoint as its own tool, so the allowlist below is meaningful.
+#
+# UNVERIFIED TOOL NAMES: unlike GitHub and Supabase, these were not yet listed against a live
+# account. Run `python -m forgeops.devtools.mcp_tools <connection-id>` after connecting, then pin the
+# real names here and in tests/connectors/test_catalog.py with the verification date.
+CLOUDFLARE = ConnectorDefinition(
+    type="cloudflare",
+    display_name="Cloudflare",
+    description="Pages deployments and build logs, Workers, and zone analytics for one account.",
+    agents=[AgentId.frontend_hosting, AgentId.observability],
+    status="available",
+    transport="http",
+    url="https://mcp.cloudflare.com/mcp?codemode=false",
+    headers={"Authorization": "Bearer {api_token}"},
+    auth="token",
+    context="Cloudflare account {account_id}: Pages deployments, build logs and zone analytics",
+    docs_url="https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/",
+    config_fields=[
+        ConfigField(key="account_id", label="Account ID", placeholder="32-character account id",
+                    pattern=r"[0-9a-f]{32}",
+                    help="Cloudflare dashboard → Workers & Pages → the Account ID in the right sidebar."),
+        ConfigField(key="api_token", label="API token", secret=True, placeholder="…",
+                    help="A read-only token. ForgeOps never asks for write permissions."),
+    ],
+    setup_steps=[
+        "Cloudflare dashboard → My Profile → API Tokens → Create Token → Custom token.",
+        "Permissions (read only): Account → Cloudflare Pages → Read; Account → Workers Scripts → Read; "
+        "Zone → Analytics → Read.",
+        "Account Resources: include only the account holding this site.",
+        "Copy the Account ID from Workers & Pages in the dashboard sidebar.",
+    ],
+    tools=[
+        _cf("pages_projects_list", Capability.hosting, "List Cloudflare Pages projects in the account.", 4000),
+        _cf("pages_deployments_list", Capability.hosting,
+            "List recent deployments of a Pages project, newest first, with status and commit.", 8000),
+        _cf("pages_deployment_get", Capability.hosting,
+            "Get one deployment: trigger, commit, stages and outcome.", 8000),
+        _cf("pages_deployment_logs", Capability.hosting,
+            "Read the build and deploy logs of one Pages deployment.", 16000),
+        _cf("workers_list", Capability.hosting, "List Workers scripts in the account.", 4000),
+        _cf("zones_list", Capability.hosting, "List zones (domains) in the account.", 2000),
+        _cf("analytics_get", Capability.metrics,
+            "Request and error counts for a zone over a time window.", 8000),
+    ],
+)
+
+
 def _soon(type_: str, name: str, description: str, *agents: AgentId) -> ConnectorDefinition:
     return ConnectorDefinition(type=type_, display_name=name, description=description, agents=list(agents),
                                status="coming_soon", transport="http")
 
 
 COMING_SOON = [
-    _soon("cloudflare", "Cloudflare", "Pages and Workers deployments, analytics and logs.", AgentId.frontend_hosting,
-          AgentId.observability),
     _soon("vercel", "Vercel", "Deployments, build logs and runtime logs.", AgentId.frontend_hosting),
     _soon("netlify", "Netlify", "Deploys and function logs.", AgentId.frontend_hosting),
     _soon("sanity", "Sanity", "Content schema and recent document changes.", AgentId.backend_services),
@@ -201,4 +253,6 @@ COMING_SOON = [
     _soon("slack", "Slack", "Incident channels and alerts.", AgentId.knowledge),
 ]
 
-CATALOG: dict[str, ConnectorDefinition] = {d.type: d for d in (KNOWLEDGE, GITHUB, SUPABASE, *COMING_SOON)}
+CATALOG: dict[str, ConnectorDefinition] = {
+    d.type: d for d in (KNOWLEDGE, GITHUB, SUPABASE, CLOUDFLARE, *COMING_SOON)
+}

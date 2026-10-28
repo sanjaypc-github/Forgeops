@@ -89,7 +89,11 @@ export interface OfficeState {
   failure: string | null;
   reportReady: boolean;
   /** What the run has spent so far, and what the harness saved. */
-  cost: { calls: number; inputTokens: number; outputTokens: number; cachedTokens: number; savedTokens: number };
+  cost: {
+    calls: number; inputTokens: number; outputTokens: number; cachedTokens: number; savedTokens: number;
+    /** input tokens per desk, so the biggest spender is visible while it happens */
+    byAgent: Record<string, { calls: number; inputTokens: number }>;
+  };
 }
 
 const FEED_LIMIT = 60;
@@ -122,7 +126,7 @@ export function initialOfficeState(desks: Desk[] = []): OfficeState {
     lastSeq: 0, phase: "idle", incident: null, startedAt: null, endedAt: null, agents, plan: null,
     evidence: [], questions: [], rca: null, recommendations: [], decision: null, actions: [],
     timeline: [], feed: [], failure: null, reportReady: false,
-    cost: { calls: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, savedTokens: 0 },
+    cost: { calls: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, savedTokens: 0, byAgent: {} },
   };
 }
 
@@ -252,14 +256,31 @@ export function applyOfficeEvent(prev: OfficeState, event: InvestigationEvent): 
       s = patchAgent(s, agent, { mode: "failed", location: agent, error: str(d.error), bubble: bubble("error", str(d.error)) });
       return feed(s, event, agent, `${title(agent)} failed: ${short(str(d.error), 60)}`, "bad");
 
-    case "llm_usage":
+    case "triage_decided": {
+      const intent = str(d.intent);
+      if (intent === "status") {
+        // answered from ForgeOps' own records: no desks run, no tokens spent
+        s = { ...s, phase: "completed", endedAt: event.ts };
+        return feed(s, event, null, "Answered from ForgeOps' own records — no agents were needed", "good");
+      }
+      return feed(s, event, null, `Treated as an incident: ${str(d.reason)}`);
+    }
+
+    case "llm_usage": {
+      const who = event.agent ?? "unknown";
+      const before = s.cost.byAgent[who] ?? { calls: 0, inputTokens: 0 };
       return { ...s, cost: {
         calls: num(d.run_calls, s.cost.calls + 1),
         inputTokens: num(d.run_input_tokens, s.cost.inputTokens),
         outputTokens: num(d.run_output_tokens, s.cost.outputTokens),
         cachedTokens: s.cost.cachedTokens + num(d.cached_tokens),
         savedTokens: num(d.run_saved_tokens, s.cost.savedTokens),
+        byAgent: { ...s.cost.byAgent, [who]: {
+          calls: num(d.agent_calls, before.calls + 1),
+          inputTokens: num(d.agent_input_tokens, before.inputTokens + num(d.input_tokens)),
+        } },
       } };
+    }
 
     case "context_compacted":
       // the saved total also arrives with the next usage event; this keeps the panel live meanwhile

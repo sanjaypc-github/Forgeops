@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     forgeops_run_seconds: float = 1800
     # Context discipline: how many recent tool results each desk keeps in full
     forgeops_keep_full_tool_outputs: int = 3
+    forgeops_empty_results_before_stop: int = 2
     forgeops_tool_output_chars: int = 8000
     # Ask the provider to cache the stable prompt prefix (paid models; free ones ignore it)
     forgeops_prompt_cache: bool = False
@@ -57,7 +58,8 @@ class Settings(BaseSettings):
         return Budgets(specialist_seconds=self.forgeops_specialist_seconds,
                        answer_seconds=self.forgeops_answer_seconds, run_seconds=self.forgeops_run_seconds,
                        tool_output_chars=self.forgeops_tool_output_chars,
-                       keep_full_tool_outputs=self.forgeops_keep_full_tool_outputs)
+                       keep_full_tool_outputs=self.forgeops_keep_full_tool_outputs,
+                       empty_results_before_stop=self.forgeops_empty_results_before_stop)
 
     def model_for(self, role: str) -> str:
         if role not in MODEL_ROLES:

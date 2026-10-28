@@ -70,6 +70,9 @@ export function CostMeter({ state }: { state: OfficeState }) {
   const { calls, inputTokens, outputTokens, cachedTokens, savedTokens } = state.cost;
   if (!calls) return null;
   const total = inputTokens + outputTokens;
+  const spenders = Object.entries(state.cost.byAgent)
+    .sort((a, b) => b[1].inputTokens - a[1].inputTokens)
+    .slice(0, 3);
   const savings = [
     savedTokens ? `${compact(savedTokens)} saved by compaction` : "",
     cachedTokens ? `${compact(cachedTokens)} from cache` : "",
@@ -79,6 +82,16 @@ export function CostMeter({ state }: { state: OfficeState }) {
       <span className="mono">{calls}</span> model {calls === 1 ? "call" : "calls"} ·{" "}
       <span className="mono">{compact(total)}</span> tokens
       {savings && <span className="muted"> · {savings}</span>}
+      {spenders.length > 0 && (
+        <span className="cost-desks">
+          {spenders.map(([agent, spent]) => (
+            <span key={agent} className="cost-desk">
+              {isAgentId(agent) ? PERSONAS[agent].short : agent}
+              <b>{compact(spent.inputTokens)}</b>
+            </span>
+          ))}
+        </span>
+      )}
     </p>
   );
 }

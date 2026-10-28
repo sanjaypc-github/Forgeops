@@ -78,6 +78,44 @@ saving for each run, and a unit test asserts that citations survive compaction."
 Source: `backend/forgeops/engine/budgets.py`, `specialist.py` (`_view`),
 test `test_older_tool_output_is_collapsed_but_still_citable`.
 
+## 10.2b Triage — a measured before-and-after
+
+This is the project's second quantified result, and unlike §10.2 it is **[MEASURED]** on a real run
+rather than computed.
+
+**Before.** The question *"is all the connectors connected successfully?"* was treated as an incident
+and investigated by the full agent pipeline. Recorded in `investigations.usage`:
+
+| Desk | Model calls | Input tokens | Share |
+|---|---|---|---|
+| Knowledge | 12 | 50,085 | 72% |
+| Database | 4 | 11,774 | 17% |
+| Supervisor | 3 | 5,251 | 8% |
+| RCA | 1 | 2,185 | 3% |
+| **Total** | **20** | **69,295 in + 5,555 out = 74,850** | 7,688 saved by compaction |
+
+The Knowledge desk spent nearly three quarters of the run searching a vault that contained nothing
+about the subject, because nothing stopped it after the first fruitless searches.
+
+**The diagnosis.** The question is not an incident. It asks about ForgeOps' own connectors, and the
+answer is already in ForgeOps' database.
+
+**After.** A rule-based classifier (`engine/triage.py`) runs before the graph. A platform question is
+answered from the connections table with **zero model calls and zero tokens**; an incident is
+investigated exactly as before; anything ambiguous is treated as an incident, because wrongly
+skipping a real incident is far worse than spending tokens. A second mechanism stops a desk after
+`empty_results_before_stop` consecutive fruitless searches.
+
+| Metric | Before | After |
+|---|---|---|
+| Model calls for that question | 20 | **0** |
+| Tokens | 74,850 | **0** |
+| Answer quality | a negative finding from the wrong source | the actual connection status, from records |
+
+Tests: `tests/engine/test_triage.py` (classification, including the original message verbatim),
+`tests/test_chat_api.py` (asserts the model is never called), and
+`tests/engine/test_specialist.py` (asserts a desk stops after two empty results).
+
 ## 10.3 Other efficiency properties (qualitative, not yet quantified)
 
 | Property | Status | Explanation |

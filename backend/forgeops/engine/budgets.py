@@ -16,5 +16,6 @@ class Budgets:
     followup_rounds: int = 2
     run_seconds: float = 1200
     tool_output_chars: int = 8000  # default cap; a tool may set its own in the catalog
+    empty_results_before_stop: int = 2  # consecutive fruitless searches before a desk gives up
     keep_full_tool_outputs: int = 3  # older tool results collapse to their stored excerpt
     collapsed_output_chars: int = 500

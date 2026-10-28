@@ -16,6 +16,7 @@ Git history; status is as of the commit containing this file.
 | **M3** — Connector catalog | GitHub and Supabase connectors verified against the live servers, catalog with coming-soon entries, connection APIs (abilities, test, tools), service map for planning, Connectors page | ✅ Complete | 22 Sep 2026 |
 | **M3.5** — Observability and context discipline | Token metering per desk, run-cost reporting, rolling compaction, per-tool output caps, cache-stable prompts, configurable budgets, checkpoint serializer allow-list | ✅ Complete | 28 Sep 2026 |
 | **M4** — OAuth and further connectors | OAuth client (discovery, dynamic registration, PKCE, refresh), token storage and refresh under lock, connect flow and callback, Connectors-page consent button | 🟡 **Partially complete** — framework done and tested; Cloudflare, Sanity and Sentry connector definitions not yet pinned | 28 Sep 2026 |
+| **M6** — Triage and search discipline | Rule-based intent triage answering platform questions with no model call; empty-result backoff in the specialist loop; Cloudflare connector; MCP tool-name discovery utility; per-desk cost meter | ✅ Complete | 28 Oct 2026 |
 | **M5** — Actions and hardening | GitHub issue creation on approval (implemented, not yet exercised live), audit log (implemented), budget tuning (implemented), evaluation write-up | 🟡 **Partially complete** | — |
 | **Evaluation study** | Execute the protocol in `10-results-and-measurements.md` | ⬜ Not started | — |
 

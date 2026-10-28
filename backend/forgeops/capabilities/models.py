@@ -30,6 +30,8 @@ class ToolResult(BaseModel):
     error: str | None = None
     truncated: bool = False
     duration_ms: int = 0
+    # True when the call succeeded but found nothing; desks stop searching after a few of these.
+    empty: bool = False
 
 
 class HealthStatus(BaseModel):

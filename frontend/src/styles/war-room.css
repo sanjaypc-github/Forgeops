@@ -151,6 +151,10 @@
 }
 .tab:hover:not(:disabled) { background: var(--sunk); color: var(--ink); }
 .tab.is-active { color: var(--ink); border-bottom-color: var(--ink); }
+.cost-desks { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; }
+.cost-desk { display: inline-flex; gap: 4px; color: var(--ink-2); }
+.cost-desk b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
 .cost-meter {
   margin: 0; padding: 6px 10px; border-top: 1px solid var(--line);
   color: var(--ink-2); background: var(--surface); border-radius: 0 0 8px 8px;

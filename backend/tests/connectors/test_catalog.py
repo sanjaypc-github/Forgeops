@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from forgeops.capabilities.routing import agent_for_capability
 from forgeops.connectors.definitions import CATALOG
 from forgeops.engine.models import AgentId, Capability
@@ -17,9 +19,34 @@ SUPABASE_NEVER = {"get_publishable_keys", "generate_typescript_types", "search_d
 
 def test_available_connectors_and_coming_soon():
     available = {t for t, d in CATALOG.items() if d.status == "available"}
-    assert available == {"knowledge", "github", "supabase"}
+    assert available == {"knowledge", "github", "supabase", "cloudflare"}
     soon = {t for t, d in CATALOG.items() if d.status == "coming_soon"}
-    assert {"cloudflare", "vercel", "netlify", "sanity", "sentry"} <= soon
+    assert {"vercel", "netlify", "sanity", "sentry"} <= soon
+
+
+def test_cloudflare_disables_code_mode_and_stays_read_only():
+    """Code Mode exposes only `search` and `execute`, and `execute` can call any Cloudflare API."""
+    cf = CATALOG["cloudflare"]
+    assert cf.transport == "http" and cf.auth == "token"
+    assert cf.url == "https://mcp.cloudflare.com/mcp?codemode=false"
+    assert "codemode=false" in cf.url, "without this the agent gets an unrestricted execute tool"
+    assert cf.headers["Authorization"] == "Bearer {api_token}"
+    assert all(m.permission == "read" for m in cf.tools)
+    assert cf.supports_writes is False and cf.write_headers == {}
+    assert {agent_for_capability(m.capability) for m in cf.tools} == {
+        AgentId.frontend_hosting, AgentId.observability}
+    assert [f.key for f in cf.config_fields if f.secret] == ["api_token"]
+    assert any("read" in step.lower() for step in cf.setup_steps)
+
+
+def test_cloudflare_tool_names_are_marked_unverified():
+    """Upstream names must be listed against a live account before they are trusted.
+
+    Run `python -m forgeops.devtools.mcp_tools <connection-id>` after connecting, then replace this
+    test with pinned names and the verification date, as GitHub and Supabase have.
+    """
+    source = Path(__file__).resolve().parents[2] / "forgeops" / "connectors" / "definitions.py"
+    assert "UNVERIFIED TOOL NAMES" in source.read_text(encoding="utf-8")
 
 
 def test_every_tool_routes_to_a_desk_the_connector_lists():

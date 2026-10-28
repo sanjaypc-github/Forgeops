@@ -28,23 +28,19 @@ Three rules shape every test in this project:
 | API | `backend/tests/test_*_api.py`, `test_auth.py`, `test_security.py`, `test_health.py`, `test_database_schema.py` | Endpoints, authentication, CSRF, scoping, SSE replay, OAuth flow |
 | Frontend | `frontend/src/**/*.test.ts(x)` | Office reducer, chat panel, connectors page, login, event stream, layout |
 
-**Totals as of this commit: 198 backend tests in 34 test files, and 34 frontend tests in 7 files —
-232 automated tests.**
+**Totals as of this commit: 228 backend tests and 36 frontend tests — 264 automated tests.**
 
 ## 9.3 Current pass state (be precise about this in the report)
 
 | Group | Count | Status |
 |---|---|---|
-| Backend tests that need no database | 138 | **All passing** |
-| Backend tests that need the PostgreSQL instance | 60 | **Not runnable at the time of writing** — the Supabase project is unavailable (`tenant/user … not found`) |
-| Frontend tests | 34 | **All passing** |
+| Backend | 228 | **All passing** (342 s, 28 October 2026) |
+| Frontend | 36 | **All passing** |
 
-On **28 September 2026**, with the database reachable, the **complete backend suite of 195 tests
-passed in 744 seconds**. Three tests were added afterwards (offline mode), giving the present total
-of 198. The 60 database-backed tests are blocked by infrastructure availability, not by a code defect.
-
-The report should state this plainly rather than quoting a single clean number. Honest reporting of
-test state is consistent with the project's own evidence rules.
+Earlier in the project the Supabase instance was paused twice by the provider's free-tier inactivity
+policy, which blocked the 60 database-backed tests. After the project was restored, the complete
+suite passes. If a run is ever reported with fewer tests, check database availability first — it is
+an infrastructure condition, not a code defect.
 
 ## 9.4 Representative tests worth naming in the report
 

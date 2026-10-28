@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -19,6 +20,23 @@ RETRY_DELAYS = (0.25, 0.5)
 
 def _cut(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+# A successful call that found nothing. Connectors may say so themselves (ToolResult.empty);
+# this catches the common ways an MCP server reports it in text.
+_NOTHING = re.compile(
+    r"^\s*(\[\]|\{\}|null|none|no (?:results?|matches?|rows?|records?|items?|data|"
+    r"commits?|issues?|logs?|entries)\b.*|0 (?:results?|rows?|records?)\b.*)\s*$", re.I | re.S)
+
+
+def found_nothing(result: ToolResult) -> bool:
+    if not result.ok:
+        return False
+    if result.empty:
+        return True
+    if isinstance(result.data, list) and not result.data and not result.content.strip():
+        return True
+    return bool(_NOTHING.match(result.content or ""))
 
 
 def _summary(arguments: dict[str, Any]) -> str:
@@ -75,12 +93,14 @@ class ToolRunner:
         else:
             result = self._truncate(await self._attempt(tool_name, arguments),
                                     spec.max_output_chars if spec else None)
-        result = result.model_copy(update={"duration_ms": int((time.perf_counter() - started) * 1000)})
+        result = result.model_copy(update={"duration_ms": int((time.perf_counter() - started) * 1000),
+                                           "empty": found_nothing(result)})
 
         first_line = (result.content.strip().splitlines() or [""])[0] if result.ok else (result.error or "")
         await self._emit(EventIn(type=EventType.tool_completed, agent=agent.value, data={
             "call_id": call_id, "tool": tool_name, "ok": result.ok, "duration_ms": result.duration_ms,
-            "truncated": result.truncated, "summary": _cut(first_line, 160),
+            "truncated": result.truncated, "empty": result.empty,
+            "summary": _cut(first_line, 160),
         }))
         record = ToolCallRecord(
             id=call_id, agent=agent, tool=tool_name, connector_type=connector_type,

@@ -40,7 +40,8 @@ async def test_chat_starts_an_investigation_that_pauses_for_approval(auth_client
     assert detail["details"]["rca"]["summary"] == "Pool lowered"
     assert len(detail["details"]["evidence"]) == 2
     history = await app.state.event_bus.history(inv_id)
-    assert [e.type for e in history[:3]] == ["investigation_started", "chat_message", "supervisor_started"]
+    assert [e.type for e in history[:4]] == ["investigation_started", "chat_message",
+                                             "triage_decided", "supervisor_started"]
     assert history[1].data == {"role": "user", "text": "Checkout is slow after the deploy"}
 
 
@@ -111,3 +112,50 @@ async def test_restart_recovery_marks_running_investigations_failed(auth_client,
     assert await app.state.runner.recover_on_startup() == 1
     async with session_factory() as s:
         assert (await s.get(Investigation, inv_id)).status == "failed"
+
+
+# ─── triage: platform questions never reach the investigation pipeline ───────────────────────────
+async def test_a_connector_question_is_answered_without_any_model_call(auth_client, app, engine, tmp_path):
+    """The measured case: this exact question previously cost 74,850 tokens across 20 model calls."""
+    (tmp_path / "a.md").write_text("# Runbook\nnothing relevant", "utf-8")
+    await auth_client.post("/api/connections", json={
+        "type": "knowledge", "name": "Runbooks", "config": {"vault_path": str(tmp_path)}, "secrets": {}})
+
+    resp = await auth_client.post("/api/chat", json={"text": "is all the connecters connected successfully ?"})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["status"] == "completed"          # answered immediately, not investigated
+
+    assert engine.requests == [], "triage must not call the model at all"
+
+    messages = (await auth_client.get(f"/api/investigations/{body['investigation_id']}/chat")).json()
+    answer = next(m["text"] for m in messages if m["role"] == "supervisor")
+    assert "Runbooks" in answer and "Knowledge" in answer
+    assert "no tokens were spent" in answer
+
+    listed = (await auth_client.get("/api/investigations")).json()
+    assert listed[0]["usage"] in (None, {}) or listed[0]["usage"].get("calls", 0) == 0
+
+
+async def test_triage_records_its_decision_as_an_event(auth_client, app, engine):
+    resp = await auth_client.post("/api/chat", json={"text": "which tools do you have?"})
+    inv_id = resp.json()["investigation_id"]
+    detail = (await auth_client.get(f"/api/investigations/{inv_id}")).json()
+    assert detail["status"] == "completed"
+
+    async with app.state.session_factory() as session:
+        from forgeops.db.models import Event
+        rows = list(await session.scalars(select(Event).where(Event.investigation_id == inv_id)))
+    kinds = [r.type for r in rows]
+    assert "triage_decided" in kinds
+    decision = next(r for r in rows if r.type == "triage_decided")
+    assert decision.data["intent"] == "status" and decision.data["reason"]
+    assert "plan_created" not in kinds and "agent_started" not in kinds
+
+
+async def test_a_real_symptom_still_starts_a_full_investigation(auth_client, app, engine):
+    resp = await auth_client.post("/api/chat", json={
+        "text": "Checkout requests are timing out and users see errors since this morning's deploy"})
+    assert resp.json()["status"] == "running"
+    await app.state.runner.wait(resp.json()["investigation_id"])
+    assert engine.requests, "an incident must still be investigated by the agents"

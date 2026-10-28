@@ -132,7 +132,7 @@ quality, and never let its output reach a customer as an investigation.
 ## 8. Testing and verification
 
 ```bash
-cd backend && uv run pytest -q          # ~195 tests, needs the database
+cd backend && uv run pytest -q          # 228 tests, needs the database
 cd backend && uv run ruff check forgeops tests
 cd frontend && npx vitest run && npx tsc -b && npm run lint
 ```
@@ -167,8 +167,13 @@ measured, computed or planned, and nothing is invented.
 
 ## 10. Current state (2026-10-14)
 
-Done: foundation and auth; the engine and War Room; the Connectors page with Knowledge, GitHub and
-Supabase; token metering and context discipline; the OAuth connect flow.
+Done: foundation and auth; the engine and War Room; the Connectors page with Knowledge, GitHub,
+Supabase and Cloudflare; token metering and context discipline; the OAuth connect flow; intent
+triage (`engine/triage.py`) that answers platform questions with no model call, and empty-result
+backoff so a desk stops searching a source that keeps returning nothing.
+
+Use `uv run python -m forgeops.devtools.mcp_tools [connection-id]` to list what a connected MCP
+server really offers before pinning its tool names.
 
 The ICSIE 2026 paper was presented. Next: pin Cloudflare, Sanity and Sentry tool names against
 live accounts, execute the evaluation protocol in `docs/report/10-results-and-measurements.md`, and

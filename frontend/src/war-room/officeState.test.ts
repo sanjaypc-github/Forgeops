@@ -165,9 +165,42 @@ test("run cost follows the usage events and keeps the compaction saving", () => 
     ev("llm_usage", "code", { input_tokens: 5000, output_tokens: 110, cached_tokens: 3000,
       run_calls: 2, run_input_tokens: 6200, run_output_tokens: 200, run_saved_tokens: 4000 }),
   ]);
-  expect(state.cost).toEqual({ calls: 2, inputTokens: 6200, outputTokens: 200, cachedTokens: 3000, savedTokens: 4000 });
+  expect(state.cost).toEqual({
+    calls: 2, inputTokens: 6200, outputTokens: 200, cachedTokens: 3000, savedTokens: 4000,
+    byAgent: { supervisor: { calls: 1, inputTokens: 1200 }, code: { calls: 1, inputTokens: 5000 } },
+  });
+  // the biggest spender is visible while the investigation is still running
+  const top = Object.entries(state.cost.byAgent).sort((a, b) => b[1].inputTokens - a[1].inputTokens)[0];
+  expect(top[0]).toBe("code");
 });
 
 test("an investigation with no model calls has no cost", () => {
   expect(run([]).cost.calls).toBe(0);
+});
+
+test("a platform question is answered without running any desk", () => {
+  seq = 0;
+  const state = run([
+    ev("investigation_started", null, { description: "is all the connectors connected?" }),
+    ev("chat_message", null, { role: "user", text: "is all the connectors connected?" }),
+    ev("triage_decided", null, { intent: "status", reason: "asks about ForgeOps' own connectors" }),
+    ev("chat_message", "supervisor", { role: "supervisor", text: "2 of 2 connections are healthy." }),
+    ev("investigation_completed", "supervisor", { status: "completed", answered_by: "triage" }),
+  ]);
+  expect(state.phase).toBe("completed");
+  expect(state.cost.calls).toBe(0);
+  expect(state.feed.some((f) => f.text.includes("no agents were needed"))).toBe(true);
+  // no desk ever started
+  expect(Object.values(state.agents).every((a) => a.mode !== "working")).toBe(true);
+});
+
+test("an incident still runs the desks", () => {
+  seq = 0;
+  const state = run([
+    ev("investigation_started", null, { description: "site is down" }),
+    ev("triage_decided", null, { intent: "incident", reason: "the message describes a symptom" }),
+    ev("supervisor_started", "supervisor"),
+  ]);
+  expect(state.phase).toBe("planning");
+  expect(state.feed.some((f) => f.text.includes("Treated as an incident"))).toBe(true);
 });

@@ -26,7 +26,7 @@ export type EventType =
   | "review_completed" | "rca_started" | "rca_completed"
   | "approval_requested" | "approval_granted" | "approval_rejected" | "action_started"
   | "action_completed" | "report_ready" | "investigation_completed" | "investigation_failed"
-  | "llm_usage" | "context_compacted";
+  | "llm_usage" | "context_compacted" | "triage_decided";
 
 export interface InvestigationEvent {
   seq: number;

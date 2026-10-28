@@ -12,6 +12,8 @@ from forgeops.api.investigations import get_owned_investigation
 from forgeops.db.models import ChatMessage, Investigation
 from forgeops.engine.models import AgentId
 from forgeops.engine.supervisor import answer_followup
+from forgeops.engine.triage import classify
+from forgeops.services.status_report import status_answer
 from forgeops.events.models import EventIn, EventType
 
 router = APIRouter(tags=["chat"])
@@ -57,6 +59,7 @@ async def chat(body: ChatIn, request: Request, user: CurrentUser = Depends(requi
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Message is empty")
 
     if body.investigation_id is None:
+        decision = classify(text)
         async with state.session_factory() as session:
             inv = Investigation(workspace_id=user.workspace_id, description=text, source="chat",
                                 status="queued", created_by=user.user_id)
@@ -65,6 +68,24 @@ async def chat(body: ChatIn, request: Request, user: CurrentUser = Depends(requi
         await state.event_bus.emit(inv.workspace_id, inv.id, EventIn(
             type=EventType.investigation_started, data={"description": text}))
         await _store_and_emit(request, inv, "user", text)
+        await state.event_bus.emit(inv.workspace_id, inv.id, EventIn(
+            type=EventType.triage_decided,
+            data={"intent": decision.intent, "reason": decision.reason}))
+
+        if not decision.needs_investigation:
+            # ForgeOps already knows this; answering from its own records costs nothing
+            answer = await status_answer(state.session_factory, user.workspace_id)
+            await _store_and_emit(request, inv, "supervisor", answer)
+            async with state.session_factory() as session:
+                stored = await session.get(Investigation, inv.id)
+                stored.status = "completed"
+                await session.commit()
+            await state.event_bus.emit(inv.workspace_id, inv.id, EventIn(
+                type=EventType.investigation_completed, agent=AgentId.supervisor.value,
+                data={"status": "completed", "answered_by": "triage"}))
+            log.info("chat.answered_by_triage", investigation_id=inv.id, reason=decision.reason)
+            return JSONResponse({"investigation_id": inv.id, "status": "completed"}, status_code=201)
+
         await state.runner.start(inv.id)
         return JSONResponse({"investigation_id": inv.id, "status": "running"}, status_code=201)
 

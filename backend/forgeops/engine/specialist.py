@@ -117,6 +117,7 @@ class SpecialistLoop:
         self._borrowed_evidence: list[Evidence] = []
         self._collapsible: dict[int, str] = {}  # message index -> short form of an old tool output
         self.saved_chars = 0  # tool output this desk stopped resending
+        self._empty_streak = 0  # consecutive tool calls that found nothing
 
     # ----- prompt and tool schemas -------------------------------------------------------------
     def _system(self) -> str:
@@ -233,15 +234,26 @@ class SpecialistLoop:
         result, record = await self.tool_runner.run(agent=self.agent, tool_name=real,
                                                     arguments=call.arguments, allowed=set(self._by_llm_name.values()))
         self._records.append(record)
+        # A desk that keeps finding nothing is spending tokens to learn the same fact twice.
+        self._empty_streak = self._empty_streak + 1 if result.empty else 0
         body = result.content if result.ok else f"ERROR: {result.error}"
+        if self._exhausted_search():
+            body += ("\n\n[This source has returned nothing useful "
+                     f"{self._empty_streak} times in a row. Stop searching it and call "
+                     "submit_findings now, recording in limitations what you could not find.]")
         short = _wrap(record.id, real, result.ok, _short(body, self.budgets.collapsed_output_chars), True)
         return _wrap(record.id, real, result.ok, body), tool_count + 1, short
+
+    def _exhausted_search(self) -> bool:
+        limit = self.budgets.empty_results_before_stop
+        return limit > 0 and self._empty_streak >= limit
 
     async def _loop(self) -> SpecialistResult:
         tool_count = nudges = repairs = 0
         schemas = self._schemas()
         while True:
-            force = tool_count >= self.max_tool_calls or nudges >= MAX_NUDGES or repairs > 0
+            force = (tool_count >= self.max_tool_calls or nudges >= MAX_NUDGES or repairs > 0
+                     or self._exhausted_search())
             reply = await self.llm.complete(LLMRequest(
                 purpose=self.purpose, model_role="specialist", system=self._system(),
                 messages=self._view(), tools=schemas, tool_choice=SUBMIT if force else "auto"))

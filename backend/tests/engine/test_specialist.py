@@ -198,3 +198,57 @@ async def test_the_system_prompt_is_identical_across_turns_so_it_can_be_cached()
     systems = {r.system for r in llm.requests}
     assert len(systems) == 1 and "Current time" not in systems.pop()
     assert "Current time" in llm.requests[0].messages[0].content
+
+
+# ─── search discipline: stop paying to learn the same nothing twice ──────────────────────────────
+async def _empty_search_loop(script, stop_after=2):
+    from forgeops.capabilities.models import ToolResult as TR
+
+    conn = FakeConnector("con_sb", "supabase", [SLOW], {
+        "supabase.slow_queries": TR(ok=True, content="No matching documents in the knowledge vault.",
+                                    data=[], empty=True)})
+    reg = await CapabilityRegistry.build([conn])
+    events, emit = collect_events()
+    budgets = Budgets(empty_results_before_stop=stop_after)
+    llm = ScriptedLLM(script)
+    loop = SpecialistLoop(llm=llm, agent=AgentId.database, registry=reg,
+                          tool_runner=ToolRunner(reg, emit, budgets), emit=emit, budgets=budgets,
+                          broker=None, max_tool_calls=8, seconds=30, colleagues=[])
+    return loop, llm, events, conn
+
+
+async def test_a_desk_stops_searching_after_two_empty_results():
+    def submit(req):
+        # the harness forced submission, and told the desk why
+        assert req.tool_choice == "submit_findings"
+        assert "Stop searching" in req.messages[-1].content
+        return call("submit_findings", summary="nothing found", findings=[])
+
+    loop, llm, events, conn = await _empty_search_loop({"specialist:database": [
+        call("supabase__slow_queries"), call("supabase__slow_queries"), submit]}, stop_after=2)
+    result = await loop.run(TASK, INCIDENT, "plan")
+
+    assert result.error is None and result.evidence == []
+    assert len(conn.calls) == 2, "the desk must not keep searching a source that has nothing"
+    assert [e.data.get("empty") for e in events if e.type == "tool_completed"] == [True, True]
+
+
+async def test_a_useful_result_resets_the_streak():
+    from forgeops.capabilities.models import ToolResult as TR
+
+    conn = FakeConnector("con_sb", "supabase", [SLOW], {
+        "supabase.slow_queries": TR(ok=True, content="orders_by_user 4200 ms (seq scan)")})
+    reg = await CapabilityRegistry.build([conn])
+    events, emit = collect_events()
+    budgets = Budgets(empty_results_before_stop=2)
+    llm = ScriptedLLM({"specialist:database": [
+        call("supabase__slow_queries"), call("supabase__slow_queries"),
+        lambda req: call("submit_findings", summary="found", findings=[_finding([_call_id(req.messages[-1])])]),
+    ]})
+    loop = SpecialistLoop(llm=llm, agent=AgentId.database, registry=reg,
+                          tool_runner=ToolRunner(reg, emit, budgets), emit=emit, budgets=budgets,
+                          broker=None, max_tool_calls=8, seconds=30, colleagues=[])
+    result = await loop.run(TASK, INCIDENT, "plan")
+
+    assert result.error is None and len(result.evidence) == 1
+    assert len(conn.calls) == 2  # it was never told to stop, and submitted on its own terms

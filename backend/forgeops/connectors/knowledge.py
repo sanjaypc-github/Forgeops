@@ -93,7 +93,8 @@ class KnowledgeConnector:
         await self._ensure_indexed()
         hits = await asyncio.to_thread(self._index.search, query, limit)
         if not hits:
-            return ToolResult(ok=True, content="No matching documents in the knowledge vault.", data=[])
+            return ToolResult(ok=True, content="No matching documents in the knowledge vault.",
+                              data=[], empty=True)
         content = "\n\n".join(f"### {h.chunk.source} — {h.chunk.heading}\n{h.chunk.text}" for h in hits)
         data = [{"source": h.chunk.source, "heading": h.chunk.heading, "score": h.score} for h in hits]
         return ToolResult(ok=True, content=content, data=data)

@@ -28,6 +28,7 @@ class EventType(StrEnum):
     approval_rejected = "approval_rejected"
     action_started = "action_started"
     action_completed = "action_completed"
+    triage_decided = "triage_decided"
     llm_usage = "llm_usage"
     context_compacted = "context_compacted"
     report_ready = "report_ready"
