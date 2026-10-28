@@ -53,7 +53,8 @@ class OpenRouterLLM:
     def __init__(
         self,
         *,
-        api_key: str,
+        api_key: str = "",
+        api_keys: Mapping[str, str] | None = None,
         models: Mapping[str, str],
         base_url: str,
         timeout: float = 120,
@@ -64,21 +65,30 @@ class OpenRouterLLM:
         self._models = dict(models)
         self._retry_delay = retry_delay
         self._prompt_cache = prompt_cache
-        self._client = client or AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=timeout,
-            max_retries=2,
-            default_headers={"X-Title": "ForgeOps"},
-        )
+        keys = {role: (api_keys or {}).get(role) or api_key for role in models}
+
+        def build(key: str) -> AsyncOpenAI:
+            return AsyncOpenAI(api_key=key, base_url=base_url, timeout=timeout, max_retries=2,
+                               default_headers={"X-Title": "ForgeOps"})
+
+        if client is not None:
+            self._clients = dict.fromkeys(models, client)
+            return
+        # One client per distinct key: roles sharing a key share its connection pool.
+        shared: dict[str, AsyncOpenAI] = {}
+        self._clients = {role: shared.setdefault(key, build(key)) for role, key in keys.items()}
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "OpenRouterLLM":
-        key = settings.openrouter_api_key.get_secret_value() if settings.openrouter_api_key else ""
-        if not key.strip():
-            raise LLMNotConfigured("OPENROUTER_API_KEY is not set in .env")
+        keys = {role: settings.api_key_for(role) for role in MODEL_ROLES}
+        missing = [role for role, key in keys.items() if not key]
+        if missing:
+            raise LLMNotConfigured(
+                "No OpenRouter key for " + ", ".join(missing)
+                + ". Set OPENROUTER_API_KEY, or one key per role "
+                  "(OPENROUTER_API_KEY_SUPERVISOR, _SPECIALIST, _RCA).")
         return cls(
-            api_key=key.strip(),
+            api_keys=keys,
             models={role: settings.model_for(role) for role in MODEL_ROLES},
             base_url=settings.openrouter_base_url,
             prompt_cache=settings.forgeops_prompt_cache,
@@ -110,7 +120,7 @@ class OpenRouterLLM:
         # Busy (especially free) providers sometimes answer with no choices; retry those briefly.
         for attempt in range(EMPTY_ANSWER_ATTEMPTS):
             try:
-                response = await self._client.chat.completions.create(**params)
+                response = await self._clients[request.model_role].chat.completions.create(**params)
             except openai.APIError as exc:
                 raise LLMError(f"OpenRouter request failed ({type(exc).__name__}): {exc.message}") from exc
             if response.choices:

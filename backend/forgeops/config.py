@@ -27,6 +27,11 @@ class Settings(BaseSettings):
 
     # LLM (OpenRouter)
     openrouter_api_key: SecretStr | None = None
+    # One key per role, each falling back to openrouter_api_key. Separate keys keep a role's
+    # usage and rate limit to itself, so one busy role cannot stall the others.
+    openrouter_api_key_supervisor: SecretStr | None = None
+    openrouter_api_key_specialist: SecretStr | None = None
+    openrouter_api_key_rca: SecretStr | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     forgeops_model_supervisor: str = "anthropic/claude-sonnet-5"
     forgeops_model_specialist: str = "anthropic/claude-haiku-4.5"
@@ -65,6 +70,15 @@ class Settings(BaseSettings):
         if role not in MODEL_ROLES:
             raise ValueError(f"Unknown model role {role!r}; expected one of {MODEL_ROLES}")
         return getattr(self, f"forgeops_model_{role}")
+
+    def api_key_for(self, role: str) -> str:
+        """The role's own key, or the shared one. Never returns a blank key as if it were set."""
+        if role not in MODEL_ROLES:
+            raise ValueError(f"Unknown model role {role!r}; expected one of {MODEL_ROLES}")
+        for candidate in (getattr(self, f"openrouter_api_key_{role}"), self.openrouter_api_key):
+            if candidate and candidate.get_secret_value().strip():
+                return candidate.get_secret_value().strip()
+        return ""
 
 
 @lru_cache

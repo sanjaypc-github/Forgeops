@@ -107,6 +107,7 @@ cd frontend && npm install && npm run dev     # http://localhost:5173
 | `FORGEOPS_SECRET_KEY`, `FORGEOPS_ADMIN_EMAIL`, `FORGEOPS_ADMIN_PASSWORD` | first sign-in |
 | `FORGEOPS_LLM` | `openrouter` (default) or `offline` (§7) |
 | `OPENROUTER_API_KEY`, `FORGEOPS_MODEL_*` | the real provider and per-role models |
+| `OPENROUTER_API_KEY_SUPERVISOR`, `_SPECIALIST`, `_RCA` | optional key per role; each falls back to `OPENROUTER_API_KEY`, so a role can carry its own rate limit |
 | `FORGEOPS_SPECIALIST_SECONDS`, `FORGEOPS_ANSWER_SECONDS`, `FORGEOPS_RUN_SECONDS` | time budgets |
 | `FORGEOPS_TOOL_OUTPUT_CHARS`, `FORGEOPS_KEEP_FULL_TOOL_OUTPUTS` | context discipline |
 | `FORGEOPS_PROMPT_CACHE` | mark the stable prefix for caching (paid models) |

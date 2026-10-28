@@ -138,3 +138,48 @@ async def test_prompt_cache_marks_the_stable_system_prefix():
     body = json.loads(seen[-1].content)
     assert body["messages"][0] == {"role": "system", "content": [
         {"type": "text", "text": "SYS", "cache_control": {"type": "ephemeral"}}]}
+
+
+def test_each_role_uses_its_own_key_and_shared_roles_share_a_client():
+    """Three accounts, one per role: a role's rate limit then belongs to that role alone."""
+    llm = OpenRouterLLM(
+        api_keys={"supervisor": "k_sup", "specialist": "k_spec", "rca": "k_rca"},
+        models=MODELS, base_url=BASE)
+    assert llm._clients["supervisor"].api_key == "k_sup"
+    assert llm._clients["specialist"].api_key == "k_spec"
+    assert llm._clients["rca"].api_key == "k_rca"
+    assert len({id(c) for c in llm._clients.values()}) == 3
+
+    one = OpenRouterLLM(api_key="k_all", models=MODELS, base_url=BASE)
+    assert {c.api_key for c in one._clients.values()} == {"k_all"}
+    assert len({id(c) for c in one._clients.values()}) == 1, "one key, one connection pool"
+
+
+def test_a_role_without_its_own_key_falls_back_to_the_shared_one():
+    llm = OpenRouterLLM(api_key="k_all", api_keys={"rca": "k_rca"}, models=MODELS, base_url=BASE)
+    assert llm._clients["rca"].api_key == "k_rca"
+    assert llm._clients["supervisor"].api_key == "k_all"
+    assert llm._clients["specialist"].api_key == "k_all"
+
+
+def test_from_settings_reads_a_key_per_role(monkeypatch):
+    from forgeops.config import Settings
+
+    settings = Settings(openrouter_api_key_supervisor="k_sup",
+                        openrouter_api_key_specialist="k_spec",
+                        openrouter_api_key_rca="k_rca")
+    assert settings.api_key_for("supervisor") == "k_sup"
+    llm = OpenRouterLLM.from_settings(settings)
+    assert llm._clients["specialist"].api_key == "k_spec"
+
+
+def test_from_settings_names_the_roles_that_have_no_key():
+    from forgeops.config import Settings
+
+    from forgeops.engine.llm.base import LLMNotConfigured
+
+    settings = Settings(openrouter_api_key=None, openrouter_api_key_rca="k_rca")
+    with pytest.raises(LLMNotConfigured) as err:
+        OpenRouterLLM.from_settings(settings)
+    assert "supervisor" in str(err.value) and "specialist" in str(err.value)
+    assert "rca" not in str(err.value).split(".")[0]
