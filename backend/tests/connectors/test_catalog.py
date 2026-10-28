@@ -96,10 +96,15 @@ def test_cloudflare_covers_workers_builds_not_only_pages():
     assert any("workers_scripts_deployments" in name for name in upstream)
 
 
-def test_cloudflare_fills_the_account_id_itself():
-    """Every endpoint is account-scoped; the model must not be left to guess the id."""
+def test_cloudflare_pins_the_account_and_the_model_cannot_change_it():
+    """`fixed`, never `defaults`: a default is overwritten by the model's own arguments.
+
+    The OAuth grant reaches every account the customer belongs to, so an account_id the
+    model could set would let a desk read an account this connection is not for.
+    """
     cf = CATALOG["cloudflare"]
-    assert all(m.defaults == {"account_id": "{account_id}"} for m in cf.tools)
+    assert all(m.fixed == {"account_id": "{account_id}"} for m in cf.tools)
+    assert all("account_id" not in m.defaults for m in cf.tools)
 
 
 def test_oauth_connectors_actually_send_the_token_they_obtain():

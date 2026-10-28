@@ -179,18 +179,19 @@ SUPABASE = ConnectorDefinition(
 )
 
 
-_CF_DEFAULTS = {"account_id": "{account_id}"}
+# Fixed, not a default: a default is only a suggestion the model's own arguments overwrite,
+# while `fixed` is hidden from the tool schema and applied last. The OAuth grant covers every
+# account the customer is a member of, and the catalog's own membership endpoints would list
+# them, so an overridable account_id would let a desk read an account this connection is not
+# for. The connection names one account and only that account is reachable.
+_CF_ACCOUNT = {"account_id": "{account_id}"}
 
 
 def _cf(upstream: str, name: str, capability: Capability, description: str,
         chars: int | None = None) -> ToolMapping:
-    """Upstream names are the server's own; `name` is the short one the desks see.
-
-    Every endpoint is account-scoped, so account_id is filled from the connection rather
-    than left for the model to guess.
-    """
+    """Upstream names are the server's own; `name` is the short one the desks see."""
     return ToolMapping(upstream=upstream, name=f"cloudflare.{name}", capability=capability,
-                       permission="read", description=description, defaults=_CF_DEFAULTS,
+                       permission="read", description=description, fixed=_CF_ACCOUNT,
                        max_output_chars=chars)
 
 
