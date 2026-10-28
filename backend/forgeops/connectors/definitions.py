@@ -199,6 +199,9 @@ CLOUDFLARE = ConnectorDefinition(
     status="available",
     transport="http",
     url="https://mcp.cloudflare.com/mcp?codemode=false",
+    # {access_token} is filled by the OAuth token provider at connect time, refreshed
+    # under lock while an investigation runs. The customer never sees or pastes it.
+    headers={"Authorization": "Bearer {access_token}"},
     # The server is an OAuth resource: its 401 advertises
     # realm="OAuth", scope="user:read account:read", and it supports RFC 7591
     # dynamic client registration. A Cloudflare API token is NOT an OAuth access

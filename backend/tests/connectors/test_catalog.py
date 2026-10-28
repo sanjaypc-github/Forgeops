@@ -47,7 +47,11 @@ def test_cloudflare_authenticates_with_oauth_not_an_api_token():
     """
     cf = CATALOG["cloudflare"]
     assert cf.auth == "oauth"
-    assert cf.headers == {} and cf.write_headers == {}
+    # the credential still travels as a bearer header; it is just minted by Cloudflare
+    # rather than pasted by the customer, so the placeholder is {access_token}
+    assert cf.headers == {"Authorization": "Bearer {access_token}"}
+    assert "{api_token}" not in str(cf.headers), "an API token is rejected by this server"
+    assert cf.write_headers == {}
     assert [f.key for f in cf.config_fields if f.secret] == []
     assert set(cf.oauth_scopes) == {"account:read", "user:read", "offline_access"}
     assert not any("write" in scope for scope in cf.oauth_scopes)
@@ -61,6 +65,20 @@ def test_cloudflare_tool_names_are_marked_unverified():
     """
     source = Path(__file__).resolve().parents[2] / "forgeops" / "connectors" / "definitions.py"
     assert "UNVERIFIED TOOL NAMES" in source.read_text(encoding="utf-8")
+
+
+def test_oauth_connectors_actually_send_the_token_they_obtain():
+    """An OAuth connector with no {access_token} placeholder authenticates with nothing.
+
+    The token provider fills the placeholder into the headers at call time. A definition
+    that declares no header sends the request bare, and the approval the customer just
+    granted is silently thrown away.
+    """
+    for definition in CATALOG.values():
+        if definition.auth != "oauth":
+            continue
+        headers = " ".join(definition.headers.values())
+        assert "{access_token}" in headers, f"{definition.type} obtains a token it never sends"
 
 
 def test_every_tool_routes_to_a_desk_the_connector_lists():
