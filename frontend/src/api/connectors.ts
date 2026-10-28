@@ -69,7 +69,7 @@ export const DESK_ORDER: AgentId[] = [
   "code", "frontend_hosting", "backend_services", "database", "observability", "knowledge", "action",
 ];
 
-export const startOAuth = (body: { type: string; name?: string }) =>
+export const startOAuth = (body: { type: string; name?: string; config?: Record<string, string | boolean> }) =>
   api<{ connection_id: string; authorize_url: string }>("/connections/oauth/start",
     { method: "POST", body: JSON.stringify(body) });
 

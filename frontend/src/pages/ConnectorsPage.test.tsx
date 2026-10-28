@@ -146,7 +146,11 @@ test("lists abilities per desk, re-tests and disconnects a connection", async ()
 
 const CLOUDY: CatalogEntry = {
   ...GITHUB, type: "cloudy", display_name: "Cloudy", auth: "oauth", agents: ["frontend_hosting"],
-  config_fields: [], setup_steps: [], supports_writes: false,
+  // an OAuth connector can still have non-secret settings; only the credential is the provider's
+  config_fields: [
+    { key: "account_id", label: "Account ID", secret: false, required: true, help: "", placeholder: "", boolean: false, pattern: null },
+  ],
+  setup_steps: [], supports_writes: false,
 };
 
 test("an OAuth connector opens the provider's own consent window", async () => {
@@ -166,11 +170,15 @@ test("an OAuth connector opens the provider's own consent window", async () => {
   // no token to paste: the provider asks, not ForgeOps
   expect(screen.queryByLabelText(/token/i)).toBeNull();
   expect(screen.getByText(/never sees your password/)).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText("Account ID"), "acct_42");
   await userEvent.click(screen.getByRole("button", { name: "Continue to Cloudy" }));
 
   expect(opened).toEqual(["https://auth.cloudy.test/authorize?x=1"]);
   const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!;
-  expect(JSON.parse(post[1]!.body as string)).toEqual({ type: "cloudy", name: "Cloudy" });
+  // the settings typed into the form travel with the consent request
+  expect(JSON.parse(post[1]!.body as string)).toEqual({
+    type: "cloudy", name: "Cloudy", config: { account_id: "acct_42" },
+  });
 });
 
 test("the page reloads connections when the consent window reports back", async () => {

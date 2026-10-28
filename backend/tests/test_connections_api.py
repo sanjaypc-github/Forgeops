@@ -15,6 +15,29 @@ async def test_catalog_lists_knowledge_as_available(auth_client):
     assert [f["key"] for f in knowledge["config_fields"]] == ["vault_path"]
 
 
+async def test_catalog_says_which_connectors_use_oauth(auth_client):
+    """The page needs this to offer Connect instead of a token field.
+
+    Cloudflare rejects API tokens, so a catalog that omits `auth` sends the
+    customer down the paste-a-secret path for a secret that cannot work.
+    """
+    catalog = (await auth_client.get("/api/connectors/catalog")).json()
+    by_type = {c["type"]: c for c in catalog}
+    assert by_type["cloudflare"]["auth"] == "oauth"
+    assert by_type["github"]["auth"] == "token"
+    assert all("auth" in entry for entry in catalog)
+    assert not [f for f in by_type["cloudflare"]["config_fields"] if f["secret"]]
+
+
+async def test_oauth_connector_cannot_be_created_by_posting_a_connection(auth_client):
+    """It has no token yet, so this must read as a clear 400, not Internal Server Error."""
+    resp = await auth_client.post("/api/connections", json={
+        "type": "cloudflare", "name": "Cloudflare",
+        "config": {"account_id": "0" * 32}, "secrets": {}})
+    assert resp.status_code == 400, resp.text
+    assert "not connected yet" in resp.json()["detail"]
+
+
 async def test_connect_knowledge_vault(auth_client, tmp_path):
     resp = await auth_client.post("/api/connections", json={
         "type": "knowledge", "name": "Runbooks", "config": {"vault_path": _vault(tmp_path)}, "secrets": {}})

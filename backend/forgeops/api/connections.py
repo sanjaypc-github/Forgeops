@@ -31,6 +31,9 @@ class CatalogEntry(BaseModel):
     description: str
     agents: list[AgentId]
     status: str
+    # Without this the page cannot tell an OAuth connector from a token one, and
+    # falls back to asking for a secret the provider will not accept.
+    auth: Literal["token", "oauth"]
     config_fields: list[ConfigField]
     docs_url: str | None
     setup_steps: list[str]
@@ -91,7 +94,7 @@ def _invalid(detail: str) -> HTTPException:
     return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail)
 
 
-def _validate(body: ConnectionCreate, allowed_roots: list[str]) -> None:
+def validate_config(body: ConnectionCreate, allowed_roots: list[str]) -> None:
     """Checks the form against the definition and normalises it in place (trimmed text, real booleans)."""
     definition = CATALOG.get(body.type)
     if definition is None or definition.status != "available":
@@ -136,12 +139,16 @@ async def create_connection(
     body: ConnectionCreate, request: Request, user: CurrentUser = Depends(require_csrf)
 ) -> ConnectionCreated:
     state = request.app.state
-    _validate(body, state.settings.knowledge_vault_roots)
+    validate_config(body, state.settings.knowledge_vault_roots)
     row = Connection(
         workspace_id=user.workspace_id, type=body.type, name=body.name.strip(), config=body.config,
         secret_encrypted=state.secret_box.encrypt_json(body.secrets) if body.secrets else None,
     )
-    connector = build_connector(row, state.secret_box, state.settings, state.embedder, state.session_factory)
+    try:
+        connector = build_connector(row, state.secret_box, state.settings, state.embedder,
+                                    state.session_factory)
+    except ValueError as exc:  # e.g. an OAuth connector reached through the paste-a-token path
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     try:
         health = await connector.health_check()
     finally:

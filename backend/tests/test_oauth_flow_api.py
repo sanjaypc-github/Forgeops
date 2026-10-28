@@ -26,12 +26,13 @@ METADATA = {
 @pytest.fixture
 def oauth_connector(monkeypatch):
     """A catalog entry that connects with OAuth; removed again after the test."""
-    from forgeops.connectors.definitions import ToolMapping
+    from forgeops.connectors.definitions import ConfigField, ToolMapping
 
     definition = ConnectorDefinition(
         type="provider", display_name="Provider", description="test", agents=[AgentId.frontend_hosting],
         status="available", transport="http", auth="oauth", url=MCP_URL,
         headers={"Authorization": "Bearer {access_token}"},
+        config_fields=[ConfigField(key="account_id", label="Account ID", pattern=r"[0-9a-f]{32}")],
         tools=[ToolMapping(upstream="list_deployments", name="provider.list_deployments",
                            capability=Capability.hosting, permission="read")])
     monkeypatch.setitem(CATALOG, "provider", definition)
@@ -69,7 +70,7 @@ async def test_start_returns_a_consent_url_and_keeps_the_verifier_on_the_server(
         auth_client, app, oauth_connector, provider):
     calls, _ = provider
     resp = await auth_client.post("/api/connections/oauth/start",
-                                  json={"type": "provider", "name": "Hosting"})
+                                  json={"type": "provider", "name": "Hosting", "config": {"account_id": "a" * 32}})
     assert resp.status_code == 201, resp.text
     body = resp.json()
     query = {k: v[0] for k, v in parse_qs(urlsplit(body["authorize_url"]).query).items()}
@@ -93,7 +94,7 @@ async def test_the_callback_stores_the_tokens_and_marks_the_connection(
         return HealthStatus(ok=True, detail="1 read tools available")
 
     monkeypatch.setattr("forgeops.api.oauth_flow._check", health)
-    started = (await auth_client.post("/api/connections/oauth/start", json={"type": "provider"})).json()
+    started = (await auth_client.post("/api/connections/oauth/start", json={"type": "provider", "config": {"account_id": "a" * 32}})).json()
     state = next(iter(app.state.oauth_consents.items))
 
     page = await auth_client.get(f"/api/connections/oauth/callback?code=code_1&state={state}")
@@ -116,7 +117,7 @@ async def test_a_failed_health_check_leaves_the_reason_on_the_connection(
         return HealthStatus(ok=False, detail="the server offers none of the tools ForgeOps uses")
 
     monkeypatch.setattr("forgeops.api.oauth_flow._check", health)
-    await auth_client.post("/api/connections/oauth/start", json={"type": "provider"})
+    await auth_client.post("/api/connections/oauth/start", json={"type": "provider", "config": {"account_id": "a" * 32}})
     state = next(iter(app.state.oauth_consents.items))
     page = await auth_client.get(f"/api/connections/oauth/callback?code=c&state={state}")
     assert page.status_code == 400 and "needs attention" in page.text
@@ -137,7 +138,7 @@ async def test_a_denied_or_unknown_consent_changes_nothing(auth_client, app, oau
 
 async def test_another_workspace_cannot_finish_someone_elses_consent(auth_client, app, oauth_connector,
                                                                      provider):
-    await auth_client.post("/api/connections/oauth/start", json={"type": "provider"})
+    await auth_client.post("/api/connections/oauth/start", json={"type": "provider", "config": {"account_id": "a" * 32}})
     state = next(iter(app.state.oauth_consents.items))
     app.state.oauth_consents.items[state].workspace_id = "ws_someone_else"
 
@@ -155,7 +156,7 @@ async def test_a_token_connector_cannot_use_the_oauth_flow(auth_client):
 async def test_starting_requires_csrf(auth_client, oauth_connector, provider):
     auth_client.headers.pop("X-CSRF-Token")
     assert (await auth_client.post("/api/connections/oauth/start",
-                                   json={"type": "provider"})).status_code == 403
+                                   json={"type": "provider", "config": {"account_id": "a" * 32}})).status_code == 403
 
 
 def test_pending_consents_expire():
@@ -191,8 +192,34 @@ async def test_a_connection_name_is_escaped_on_the_result_page(
 
     monkeypatch.setattr("forgeops.api.oauth_flow._check", health)
     await auth_client.post("/api/connections/oauth/start",
-                           json={"type": "provider", "name": "<script>alert(1)</script>"})
+                           json={"type": "provider", "name": "<script>alert(1)</script>",
+                                 "config": {"account_id": "a" * 32}})
     state = next(iter(app.state.oauth_consents.items))
     page = await auth_client.get(f"/api/connections/oauth/callback?code=c&state={state}")
     assert "<script>alert(1)</script>" not in page.text
     assert "&lt;script&gt;" in page.text
+
+
+async def test_start_keeps_the_settings_the_customer_typed(
+        auth_client, app, session_factory, oauth_connector, provider):
+    """Only the credential comes from the provider; the rest of the form still matters.
+
+    Cloudflare's account id names the account the Supervisor's service map describes,
+    so a connection created with an empty config would be undescribable.
+    """
+    started = (await auth_client.post("/api/connections/oauth/start", json={
+        "type": "provider", "name": "Hosting", "config": {"account_id": "b" * 32}})).json()
+    async with session_factory() as db:
+        row = await db.get(Connection, started["connection_id"])
+    assert row.config == {"account_id": "b" * 32}
+
+
+async def test_start_rejects_settings_that_do_not_match_the_definition(
+        auth_client, oauth_connector, provider):
+    bad_pattern = await auth_client.post("/api/connections/oauth/start", json={
+        "type": "provider", "config": {"account_id": "not-an-id"}})
+    assert bad_pattern.status_code == 422, bad_pattern.text
+
+    undeclared = await auth_client.post("/api/connections/oauth/start", json={
+        "type": "provider", "config": {"account_id": "c" * 32, "smuggled": "x"}})
+    assert undeclared.status_code == 422, undeclared.text

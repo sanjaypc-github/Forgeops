@@ -7,6 +7,7 @@ again, which is safer than storing half-finished authorizations.
 
 import json
 import secrets
+from typing import Any
 from dataclasses import dataclass, field
 from html import escape
 from datetime import UTC, datetime, timedelta
@@ -15,8 +16,9 @@ import httpx2
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from forgeops.api.connections import ConnectionCreate, validate_config
 from forgeops.api.deps import CurrentUser, current_user, require_csrf
 from forgeops.connectors.definitions import CATALOG
 from forgeops.connectors.factory import OAUTH_KEY, build_connector
@@ -75,6 +77,10 @@ def consents(request: Request) -> PendingConsents:
 class OAuthStart(BaseModel):
     type: str
     name: str = ""
+    # The connector still has non-secret settings to collect (Cloudflare's account id
+    # names the account the service map talks about). Only the credential comes from
+    # the provider, so dropping these would store a connection nothing can describe.
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class OAuthStarted(BaseModel):
@@ -121,6 +127,10 @@ async def start_oauth(body: OAuthStart, request: Request,
     if definition is None or definition.status != "available" or definition.auth != "oauth":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                             f"Connector {body.type!r} does not connect with OAuth")
+    draft = ConnectionCreate(type=body.type, name=body.name.strip() or definition.display_name,
+                             config=dict(body.config), secrets={})
+    validate_config(draft, request.app.state.settings.knowledge_vault_roots)
+
     redirect_uri = _redirect_uri(request)
     try:
         async with httpx2.AsyncClient() as client:
@@ -130,7 +140,7 @@ async def start_oauth(body: OAuthStart, request: Request,
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
     row = Connection(workspace_id=user.workspace_id, type=definition.type,
-                     name=(body.name.strip() or definition.display_name), config={},
+                     name=draft.name, config=draft.config,
                      status="connecting", last_error="Waiting for you to approve access")
     async with request.app.state.session_factory() as session:
         session.add(row)

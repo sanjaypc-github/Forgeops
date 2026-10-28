@@ -60,13 +60,27 @@ function ConnectForm({ entry, onCancel, onConnected }: {
   });
 
   const connectOAuth = useMutation({
-    mutationFn: () => startOAuth({ type: entry.type, name: name.trim() || entry.display_name }),
+    // the non-secret settings still come from the form; only the credential is the
+    // provider's to give.
+    mutationFn: () => startOAuth({
+      type: entry.type, name: name.trim() || entry.display_name, config: nonSecretValues(),
+    }),
     onSuccess: ({ authorize_url }) => {
       // the provider's own consent window; ForgeOps never sees the sign-in
       window.open(authorize_url, "forgeops-oauth", "width=600,height=760");
       onConnected(null);
     },
   });
+
+  function nonSecretValues(): Record<string, string | boolean> {
+    const config: Record<string, string | boolean> = {};
+    for (const field of entry.config_fields) {
+      if (field.secret) continue;
+      const value = values[field.key];
+      if (value !== undefined && value !== "") config[field.key] = value;
+    }
+    return config;
+  }
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
