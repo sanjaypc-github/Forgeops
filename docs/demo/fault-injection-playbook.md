@@ -19,12 +19,30 @@ to the repository under test, the Code desk can simply read it and the demonstra
 
 ## Fault A — the schema mismatch (primary)
 
-One line in `src/lib/events.ts`:
+**Not one line.** `supabase-js` infers the row type from the `.select(...)` string, so changing
+only the select fails `tsc -b` with *"Property 'starts_at' is missing in type"*, the Cloudflare build
+fails, and the old working version keeps serving. Verified on 2026-10-28.
+
+The fault that compiles is a **consistent rename** — the style-guide refactor the commit message
+claims. Rename the field in the interface, in the `.order(...)` clause and in every component that
+reads it, and leave the database alone:
 
 ```diff
--    .select("id, title, venue, starts_at, seats_left")
-+    .select("id, title, venue, startTime, seats_left")
+  export interface CampusEvent {
+-   starts_at: string;
++   startTime: string;
+  }
+-   .select("id, title, venue, starts_at, seats_left")
+-   .order("starts_at", { ascending: true });
++   .select("id, title, venue, startTime, seats_left")
++   .order("startTime", { ascending: true });
 ```
+
+plus `event.starts_at` → `event.startTime` in `EventCard.tsx` and `EventDialog.tsx`
+(`npm run build` must pass before you push — a red build means no deployment and no demo).
+
+Also delete the `// ← the line the bug will change` comment if it is still in the file: the Code desk
+reads the source.
 
 Commit with a message that does **not** give it away:
 
